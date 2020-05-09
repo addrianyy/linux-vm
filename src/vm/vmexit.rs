@@ -44,11 +44,11 @@ pub enum VmExit {
         def_rbx: u64,
     },
     Exception {
-        instruction:      InstructionBytes,
-        exception_vector: ExceptionVector,
-        error_code:       Option<u32>,
-        software:         bool,
-        param:            u64,
+        instruction: InstructionBytes,
+        vector:      ExceptionVector,
+        error_code:  Option<u32>,
+        software:    bool,
+        param:       u64,
     },
     InterruptWindow {
         deliverable_type: PendingInterruptType,
@@ -63,12 +63,14 @@ pub enum VmExit {
 
 impl VmExit {
     pub(super) fn from_run_exit_context(exit_context: &whv::WHV_RUN_VP_EXIT_CONTEXT) -> VmExit {
+        let instruction_length = exit_context.VpContext.InstructionLength() as usize;
+
         match exit_context.ExitReason {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonMemoryAccess => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.MemoryAccess };
 
-                let instruction = info.InstructionBytes
-                    [0..info.InstructionByteCount as usize].to_owned();
+                let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
+                let instruction = info.InstructionBytes[0..ilen].to_owned();
 
                 let access_info = unsafe { info.AccessInfo.AsUINT32 };
 
@@ -91,8 +93,8 @@ impl VmExit {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64IoPortAccess => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.IoPortAccess };
 
-                let instruction = info.InstructionBytes
-                    [0..info.InstructionByteCount as usize].to_owned();
+                let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
+                let instruction = info.InstructionBytes[0..ilen].to_owned();
 
                 let access_info = unsafe { info.AccessInfo.AsUINT32 };
 
@@ -159,10 +161,10 @@ impl VmExit {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonException => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.VpException };
 
-                let instruction = info.InstructionBytes
-                    [0..info.InstructionByteCount as usize].to_owned();
+                let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
+                let instruction = info.InstructionBytes[0..ilen].to_owned();
 
-                let exception_vector = ExceptionVector::from_id(info.ExceptionType)
+                let vector = ExceptionVector::from_id(info.ExceptionType)
                     .expect("Unknown exception type.");
 
                 let exception_info = unsafe { info.ExceptionInfo.AsUINT32 };
@@ -175,7 +177,7 @@ impl VmExit {
 
                 VmExit::Exception {
                     instruction,
-                    exception_vector,
+                    vector,
                     error_code,
                     software: (exception_info >> 1) & 1 != 0,
                     param:    info.ExceptionParameter,

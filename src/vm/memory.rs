@@ -31,7 +31,24 @@ impl Memory {
         None
     }
 
-    pub fn get_memory_mut(&mut self, addr: u64) -> Option<&mut [u8]> {
+    pub fn memory(&self, addr: u64) -> Option<&[u8]> {
+        if let Some((base, region)) = self.regions.range(..=addr).next_back() {
+            if addr < region.base + region.size {
+                let diff = addr - region.base;
+                let left = region.size - diff;
+
+                return unsafe {
+                    Some(std::slice::from_raw_parts(region.backing.add(diff as usize),
+                        left as usize))
+                };
+
+            }
+        }
+
+        None
+    }
+
+    pub fn memory_mut(&mut self, addr: u64) -> Option<&mut [u8]> {
         if let Some((base, region)) = self.regions.range_mut(..=addr).next_back() {
             if addr < region.base + region.size {
                 let diff = addr - region.base;
@@ -46,6 +63,34 @@ impl Memory {
         }
 
         None
+    }
+
+    pub fn read_phys_u64(&self, addr: u64) -> Result<u64, u64> {
+        let mut buffer = [0u8; 8];
+        self.read_phys(addr, &mut buffer).map(|x| u64::from_le_bytes(buffer))
+    }
+
+
+    pub fn write_phys_u64(&mut self, addr: u64, value: u64) -> Result<(), u64> {
+        self.write_phys(addr, &value.to_le_bytes())
+    }
+
+    pub fn write_phys(&mut self, addr: u64, data: &[u8]) -> Result<(), u64> {
+        if let Some(memory) = self.memory_mut(addr) {
+            memory[..data.len()].copy_from_slice(data);
+            Ok(())
+        } else {
+            Err(0)
+        }
+    }
+
+    pub fn read_phys(&self, addr: u64, data: &mut [u8]) -> Result<(), u64> {
+        if let Some(memory) = self.memory(addr) {
+            data.copy_from_slice(&memory[..data.len()]);
+            Ok(())
+        } else {
+            Err(0)
+        }
     }
 
     pub fn map_memory(&mut self, addr: u64, size: u64, contents: Option<&[u8]>) {
@@ -81,4 +126,3 @@ impl Memory {
         self.regions.insert(addr, region);
     }
 }
-
