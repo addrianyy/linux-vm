@@ -53,6 +53,11 @@ fn main() {
     let mut paging = PagingManager::new(&mut vm, page_table_allocator);
 
 
+    vm.mem_mut().map_phys_region(0x13330000, 0x5000, None);
+    vm.mem_mut().unmap_phys_region(0x13330000, 0x5000);
+    vm.mem_mut().map_phys_region(0x13330000, 0x1000, None);
+
+
     vm.mem_mut().map_phys_region(0x11111000, 0x1000, None);
     paging.map_virt_region(&mut vm, 0xFFFF_8100_0000_0000, 0x11111000, 0x1000,
         MemProt::rwx(MemAccess::Usermode));
@@ -146,6 +151,8 @@ fn main() {
     let entry = 0x2000;
 
     vm.regs_mut().rip = entry;
+
+    vm.mem().dump_physical_ranges();
     
     /*
     vm.mem_mut().map_memory(entry, 0x1000, Some(&[0xcc,0x0f, 0x22, 0xc0, 0x48, 0xc7, 0xc0, 0x37, 
