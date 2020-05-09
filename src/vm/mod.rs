@@ -23,10 +23,6 @@ pub use memory::Memory;
 pub use regbits::{cr0, cr4, efer};
 use whvp_bindings as whv;
 
-macro_rules! assert_hresult {
-    ($hr:expr) => { assert!($hr >= 0); }
-}
-
 type ExitContext = whv::WHV_RUN_VP_EXIT_CONTEXT;
 
 fn runner_thread(run_receiver: Receiver<usize>, vmexit_sender: Sender<ExitContext>) {
@@ -35,12 +31,12 @@ fn runner_thread(run_receiver: Receiver<usize>, vmexit_sender: Sender<ExitContex
 
         let mut exit_context: MaybeUninit<whv::WHV_RUN_VP_EXIT_CONTEXT> = MaybeUninit::uninit();
 
-        let success = unsafe {
+        let result = unsafe {
             whv::WHvRunVirtualProcessor(partition, 0, exit_context.as_mut_ptr() as _,
                 std::mem::size_of::<whv::WHV_RUN_VP_EXIT_CONTEXT>() as u32)
         };
 
-        assert_hresult!(success);
+        assert!(result >= 0, "Running virtual CPU failed with result {:X}.");
 
         let exit_context = unsafe { exit_context.assume_init() };
 
@@ -67,24 +63,24 @@ impl Vm {
 
         regstate_sync::sync_to_whv(&self.regs, &mut self.register_values);
 
-        let success = unsafe {
+        let result = unsafe {
             whv::WHvSetVirtualProcessorRegisters(self.partition, 0, register_names.as_ptr(),
                 register_names.len() as u32, self.register_values.as_ptr())
         };
 
-        assert_hresult!(success);
+        assert!(result >= 0, "Syncing regstate to WHV failed with result {:X}.", result);
     }
 
     fn sync_from_whv(&mut self) {
         let register_names = &regstate_sync::REGSTATE_WHV_NAMES;
         assert!(self.register_values.len() == register_names.len());
 
-        let success = unsafe {
+        let result = unsafe {
             whv::WHvGetVirtualProcessorRegisters(self.partition, 0, register_names.as_ptr(),
                 register_names.len() as u32, self.register_values.as_mut_ptr())
         };
 
-        assert_hresult!(success);
+        assert!(result >= 0, "Syncing regstate from WHV failed with result {:X}.", result);
 
         regstate_sync::sync_from_whv(&mut self.regs, &self.register_values);
     }
@@ -109,16 +105,19 @@ impl Vm {
         let mut partition = std::ptr::null_mut();
 
         unsafe {
-            assert_hresult!(whv::WHvCreatePartition(&mut partition));
+            let result = whv::WHvCreatePartition(&mut partition);
+            assert!(result >= 0, "Creating WHV partition failed with result {:X}.", result);
 
             let mut property = MaybeUninit::<whv::WHV_PARTITION_PROPERTY>::zeroed()
                 .assume_init();
 
             let set_property = |p: &whv::WHV_PARTITION_PROPERTY, code: whv::WHV_CAPABILITY_CODE| {
                 let size = std::mem::size_of::<whv::WHV_PARTITION_PROPERTY>() as u32;
+                let prop = p as *const _ as *const std::ffi::c_void;
 
-                assert_hresult!(whv::WHvSetPartitionProperty(partition, code,
-                    p as *const _ as _, size));
+                let result = whv::WHvSetPartitionProperty(partition, code, prop, size);
+                assert!(result >= 0, "Setting partition property {:X} failed with result {:X}.",
+                    code as u32, result);
             };
 
             property.ProcessorCount = 1;
@@ -139,8 +138,11 @@ impl Vm {
             set_property(&property,
                 whv::WHV_PARTITION_PROPERTY_CODE_WHvPartitionPropertyCodeExceptionExitBitmap);
             
-            assert_hresult!(whv::WHvSetupPartition(partition));
-            assert_hresult!(whv::WHvCreateVirtualProcessor(partition, 0, 0));
+            let result = whv::WHvSetupPartition(partition);
+            assert!(result >= 0, "Setting up WHV partition failed with result {:X}.", result);
+
+            let result = whv::WHvCreateVirtualProcessor(partition, 0, 0);
+            assert!(result >= 0, "Creating virtual CPU failed with result {:X}.", result);
         }
 
         let (run_sender, run_receiver)       = mpsc::channel();
@@ -203,7 +205,10 @@ impl Vm {
                 vmexit
             } else {
                 unsafe {
-                    assert_hresult!(whv::WHvCancelRunVirtualProcessor(partition, 0, 0));
+                    let result = whv::WHvCancelRunVirtualProcessor(partition, 0, 0);
+
+                    assert!(result >= 0,
+                        "Canceling virtual CPU execution failed with result {:X}.", result);
                 }
 
                 vmexit_receiver.recv_timeout(timeout)
@@ -228,8 +233,11 @@ impl Drop for Vm {
         self.runner_thread.take().unwrap().join().unwrap();
 
         unsafe {
-            assert_hresult!(whv::WHvDeleteVirtualProcessor(self.partition, 0));
-            assert_hresult!(whv::WHvDeletePartition(self.partition));
+            let result = whv::WHvDeleteVirtualProcessor(self.partition, 0);
+            assert!(result >= 0, "Deleting virtual CPU failed with result {:X}.", result);
+
+            let result = whv::WHvDeletePartition(self.partition);
+            assert!(result >= 0, "Deleting WHV partition failed with result {:X}.", result);
         }
     }
 }

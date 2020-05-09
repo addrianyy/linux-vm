@@ -20,7 +20,7 @@ impl MemBank {
             let size_left = region_size - requested_size;
 
             if size_left == 0 {
-                self.freed.remove(i);
+                self.freed.swap_remove(i);
             } else {
                 self.freed[i] = (addr + requested_size, size_left);
             }
