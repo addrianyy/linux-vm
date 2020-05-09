@@ -300,9 +300,7 @@ impl<A: PhysAllocator> PagingManager<A> {
         None
     }
 
-    pub fn read_virt(&self, vm: &Vm, virt_addr: u64, buffer: &mut [u8]) -> Result<(), u64> {
-        let mut virt_addr = virt_addr;
-
+    pub fn read_virt(&self, vm: &Vm, mut virt_addr: u64, buffer: &mut [u8]) -> Result<(), u64> {
         let mut already_read = 0;
         let mut left_to_read = buffer.len() as u64;
 
@@ -329,9 +327,7 @@ impl<A: PhysAllocator> PagingManager<A> {
         Ok(())
     }
 
-    pub fn write_virt(&self, vm: &mut Vm, virt_addr: u64, buffer: &[u8]) -> Result<(), u64> {
-        let mut virt_addr = virt_addr;
-
+    pub fn write_virt(&self, vm: &mut Vm, mut virt_addr: u64, buffer: &[u8]) -> Result<(), u64> {
         let mut already_written = 0;
         let mut left_to_write   = buffer.len() as u64;
 

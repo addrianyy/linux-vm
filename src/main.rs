@@ -60,13 +60,10 @@ fn main() {
     println!("{:X?}", paging.query_virt_addr(&vm, 0xFFFF_8100_0000_0044));
 
 
-    paging.write_virt_u64(&mut vm, 0xFFFF_8100_0000_0000, 0x133788).unwrap();
-    println!("{:X}", vm.mem_mut().read_phys_u64(0x11111000).unwrap());
-
     let backings = paging.unmap_virt_region(&mut vm, 0xFFFF_8100_0000_0000, 0x1000);
     println!("{:X?}", backings);
 
-    //let mut paging = Paging::new(&mut vm);
+    println!("{:X?}", paging.query_virt_addr(&vm, 0xFFFF_8100_0000_0044));
 
     let wanted_cpl = 0;
 
