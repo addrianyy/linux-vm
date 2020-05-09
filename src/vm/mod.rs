@@ -221,6 +221,8 @@ impl Vm {
 
 impl Drop for Vm {
     fn drop(&mut self) {
+        self.mem.destroy_all_mappings();
+
         self.run_sender.take();
         self.vmexit_receiver.take();
         self.runner_thread.take().unwrap().join().unwrap();

@@ -11,7 +11,7 @@ pub struct MemBank {
 }
 
 impl MemBank {
-    fn recycle_address(&mut self, requested_size: u64) -> Option<u64> {
+    fn reuse_address(&mut self, requested_size: u64) -> Option<u64> {
         for (i, &(addr, region_size)) in self.freed.iter().enumerate() {
             if region_size < requested_size {
                 continue;
@@ -44,7 +44,7 @@ impl MemBank {
     pub fn reserve_region(&mut self, size: u64) -> u64 {
         assert!(size & 0xFFF == 0, "Size {:X} is not page aligned.", size);
 
-        let addr = self.recycle_address(size).unwrap_or_else(|| {
+        let addr = self.reuse_address(size).unwrap_or_else(|| {
             assert!(self.next_free.checked_add(size).unwrap() <= self.end_address,
                 "Memory bank is out of space.");
 

@@ -43,6 +43,23 @@ impl Memory {
         }
     }
 
+    pub(super) fn destroy_all_mappings(&mut self) {
+        let regions = std::mem::take(&mut self.regions);
+
+        for (base, region) in regions.into_iter() {
+            let result = unsafe {
+                let result = whv::WHvUnmapGpaRange(self.partition, base, region.size);
+
+                rawmem::raw_free(region.backing);
+
+                result
+            };
+
+            assert!(result >= 0, "Unmapping GPA range on destruction failed with result {:X}.",
+                result);
+        }
+    }
+
     fn assert_addr_size(addr: u64, size: u64) {
         assert!(addr & 0xFFF == 0, "Physical address {:X} is not page aligned.", addr);
         assert!(size & 0xFFF == 0, "Size {:X} is not page aligned.", size);
@@ -235,5 +252,12 @@ impl Memory {
         if let Some((prev_start, prev_end, count)) = prev {
             dump_range(prev_start, prev_end, count);
         }
+    }
+}
+
+impl Drop for Memory {
+    fn drop(&mut self) {
+        assert!(self.regions.is_empty(), 
+            "Not all regions are free on memory manager destruction.");
     }
 }
