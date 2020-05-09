@@ -200,8 +200,14 @@ impl Memory {
     }
 
     pub fn dump_physical_ranges(&self) {
-        let dump_range = |start: u64, end: u64| {
-            println!("0x{:012X} -> 0x{:012X}", start, end);
+        let dump_range = |start: u64, end: u64, count: u64| {
+            print!("0x{:012X} -> 0x{:012X}", start, end);
+
+            if count > 1 {
+                print!(" [{}]", count);
+            }
+
+            println!();
         };
 
         let mut prev = None;
@@ -212,22 +218,22 @@ impl Memory {
 
             let mut updated = false;
 
-            if let Some((prev_start, prev_end)) = prev {
+            if let Some((prev_start, prev_end, count)) = prev {
                 if start == prev_end {
-                    prev    = Some((prev_start, end));
+                    prev    = Some((prev_start, end, count + 1));
                     updated = true;
                 } else {
-                    dump_range(prev_start, prev_end);
+                    dump_range(prev_start, prev_end, count);
                 }
             }
 
             if !updated {
-                prev = Some((start, end));
+                prev = Some((start, end, 1));
             }
         }
 
-        if let Some((prev_start, prev_end)) = prev {
-            dump_range(prev_start, prev_end);
+        if let Some((prev_start, prev_end, count)) = prev {
+            dump_range(prev_start, prev_end, count);
         }
     }
 }

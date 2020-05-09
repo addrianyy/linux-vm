@@ -49,28 +49,10 @@ fn main() {
 
     let page_table_allocator = ContinousPhysAllocator::new(1 << 30, None);
 
-    let mut vm = Vm::new(&exit_exceptions);
+    let mut vm     = Vm::new(&exit_exceptions);
     let mut paging = PagingManager::new(&mut vm, page_table_allocator);
 
-
-    vm.mem_mut().map_phys_region(0x13330000, 0x5000, None);
-    vm.mem_mut().unmap_phys_region(0x13330000, 0x5000);
-    vm.mem_mut().map_phys_region(0x13330000, 0x1000, None);
-
-
-    vm.mem_mut().map_phys_region(0x11111000, 0x1000, None);
-    paging.map_virt_region(&mut vm, 0xFFFF_8100_0000_0000, 0x11111000, 0x1000,
-        MemProt::rwx(MemAccess::Usermode));
-
-    println!("{:X?}", paging.query_virt_addr(&vm, 0xFFFF_8100_0000_0044));
-
-
-    let backings = paging.unmap_virt_region(&mut vm, 0xFFFF_8100_0000_0000, 0x1000);
-    println!("{:X?}", backings);
-
-    println!("{:X?}", paging.query_virt_addr(&vm, 0xFFFF_8100_0000_0044));
-
-    let wanted_cpl = 0;
+    let wanted_cpl = 3;
 
     let code_attribs = SegAttribs {
         seg_type:    0b1011,
@@ -149,18 +131,9 @@ fn main() {
     }
 
     let entry = 0x2000;
+    let code  = [0x48, 0x89, 0x04, 0x25, 0x00, 0x15, 0x00, 0x00, 0xCC];
 
     vm.regs_mut().rip = entry;
-
-    vm.mem().dump_physical_ranges();
-    
-    /*
-    vm.mem_mut().map_memory(entry, 0x1000, Some(&[0xcc,0x0f, 0x22, 0xc0, 0x48, 0xc7, 0xc0, 0x37, 
-        0x13, 0x00, 0x00, 0xcc]));
-    */
-
-
-    let code = [0x48, 0x89, 0x04, 0x25, 0x00, 0x15, 0x00, 0x00, 0xCC];
     vm.mem_mut().map_phys_region(entry, 0x1000, Some(&code));
 
     vm.set_preemption_time(Some(Duration::from_millis(1000)));
@@ -168,13 +141,16 @@ fn main() {
     loop {
         let vmexit = vm.run();
 
-        println!("VM exit: {:#X?}", vmexit);
+        println!("{:#X?}", vmexit);
 
         match vmexit {
-            VmExit::Preemption       => (),
-            _                        => break,
+            VmExit::Preemption => (),
+            _                  => break,
         };
     }
 
-    //println!("{:#X?}", vm.regs());
+    println!("\nRegister state: \n{:#X?}", vm.regs());
+    println!("\nPhysical memory ranges:");
+
+    vm.mem().dump_physical_ranges();
 }
