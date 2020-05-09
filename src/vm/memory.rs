@@ -22,7 +22,7 @@ impl Memory {
     }
 
     fn get_region_mut(&mut self, addr: u64) -> Option<&mut Region> {
-        if let Some((base, region)) = self.regions.range_mut(..=addr).next_back() {
+        if let Some((_base, region)) = self.regions.range_mut(..=addr).next_back() {
             if addr < region.base + region.size {
                 return Some(region);
             }
@@ -32,7 +32,7 @@ impl Memory {
     }
 
     pub fn memory(&self, addr: u64) -> Option<&[u8]> {
-        if let Some((base, region)) = self.regions.range(..=addr).next_back() {
+        if let Some((_base, region)) = self.regions.range(..=addr).next_back() {
             if addr < region.base + region.size {
                 let diff = addr - region.base;
                 let left = region.size - diff;
@@ -49,7 +49,7 @@ impl Memory {
     }
 
     pub fn memory_mut(&mut self, addr: u64) -> Option<&mut [u8]> {
-        if let Some((base, region)) = self.regions.range_mut(..=addr).next_back() {
+        if let Some((_base, region)) = self.regions.range_mut(..=addr).next_back() {
             if addr < region.base + region.size {
                 let diff = addr - region.base;
                 let left = region.size - diff;
@@ -67,7 +67,7 @@ impl Memory {
 
     pub fn read_phys_u64(&self, addr: u64) -> Result<u64, u64> {
         let mut buffer = [0u8; 8];
-        self.read_phys(addr, &mut buffer).map(|x| u64::from_le_bytes(buffer))
+        self.read_phys(addr, &mut buffer).map(|_| u64::from_le_bytes(buffer))
     }
 
 
@@ -93,7 +93,7 @@ impl Memory {
         }
     }
 
-    pub fn map_memory(&mut self, addr: u64, size: u64, contents: Option<&[u8]>) {
+    pub fn map_phys_region(&mut self, addr: u64, size: u64, contents: Option<&[u8]>) {
         assert!(addr & 0xfff == 0, "Address {:X} is not page aligned.", addr);
 
         let aligned_size = (size + 0xfff) & !0xfff;
@@ -124,5 +124,8 @@ impl Memory {
         };
 
         self.regions.insert(addr, region);
+    }
+
+    pub fn unmap_phys_region(&mut self, _addr: u64, _size: u64) {
     }
 }

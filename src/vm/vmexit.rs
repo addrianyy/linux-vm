@@ -1,4 +1,6 @@
-use super::{AccessType, SegReg, PortSize, ExceptionVector, PendingInterruptType};
+use super::{AccessType, SegReg, PortSize, ExceptionVector, 
+            PendingInterruptType, UnsupportedFeature};
+
 use super::whvp_bindings as whv;
 
 type InstructionBytes = Vec<u8>;
@@ -56,8 +58,13 @@ pub enum VmExit {
     ApicEoi {
         vector: u32,
     },
-    Preemption,
+    UnsupportedFeature {
+        feature: UnsupportedFeature,
+        param:   u64,
+    },
     UnrecoverableException,
+    InvalidState,
+    Preemption,
     Halt,
 }
 
@@ -66,19 +73,22 @@ impl VmExit {
         let instruction_length = exit_context.VpContext.InstructionLength() as usize;
 
         match exit_context.ExitReason {
+            whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonNone => {
+                panic!("Processor exited without any reason.");
+            },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonMemoryAccess => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.MemoryAccess };
 
                 let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
                 let instruction = info.InstructionBytes[0..ilen].to_owned();
 
-                let access_info = unsafe { info.AccessInfo.AsUINT32 };
+                let access_info = unsafe { info.AccessInfo.__bindgen_anon_1 };
 
-                let access = match access_info & 3 {
+                let access = match access_info.AccessType() {
                     0 => AccessType::Read,
                     1 => AccessType::Write,
                     2 => AccessType::Execute,
-                    _ => unreachable!(),
+                    _ => panic!("Unknown memory access type {}.", access_info.AccessType()),
                 };
 
                 VmExit::MemoryAccess {
@@ -86,8 +96,8 @@ impl VmExit {
                     gpa: info.Gpa,
                     gva: info.Gva,
                     access,
-                    gpa_unmapped: (access_info >> 2) & 1 != 0,
-                    gva_valid:    (access_info >> 3) & 1 != 0,
+                    gpa_unmapped: access_info.GpaUnmapped() != 0,
+                    gva_valid:    access_info.GvaValid() != 0,
                 }
             },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64IoPortAccess => {
@@ -96,14 +106,13 @@ impl VmExit {
                 let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
                 let instruction = info.InstructionBytes[0..ilen].to_owned();
 
-                let access_info = unsafe { info.AccessInfo.AsUINT32 };
+                let access_info = unsafe { info.AccessInfo.__bindgen_anon_1 };
 
-                let port_size_bytes = (access_info >> 1) & 7;
-                let port_size = match port_size_bytes {
+                let port_size = match access_info.AccessSize() {
                     1 => PortSize::Byte,
                     2 => PortSize::Word,
                     4 => PortSize::Dword,
-                    _ => panic!("Unexpected port access size {}.", port_size_bytes),
+                    _ => panic!("Unknown port access size {}.", access_info.AccessSize()),
                 };
 
                 let get_segreg = |seg: &whv::WHV_X64_SEGMENT_REGISTER| {
@@ -126,22 +135,22 @@ impl VmExit {
                     rdi:    info.Rdi,
                     ds:     get_segreg(&info.Ds),
                     es:     get_segreg(&info.Es),
-                    write:  access_info & 1 != 0,
-                    string: (access_info >> 4) & 1 != 0,
-                    rep:    (access_info >> 5) & 1 != 0,
+                    write:  access_info.IsWrite() != 0,
+                    string: access_info.StringOp() != 0,
+                    rep:    access_info.RepPrefix() != 0,
                     size:   port_size,
                 }
             },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64MsrAccess => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.MsrAccess };
 
-                let write = unsafe { info.AccessInfo.AsUINT32 } & 1 != 0;
+                let access_info = unsafe { info.AccessInfo.__bindgen_anon_1 };
 
                 VmExit::MsrAccess {
-                    msr: info.MsrNumber,
-                    rax: info.Rax,
-                    rdx: info.Rdx,
-                    write,
+                    msr:   info.MsrNumber,
+                    rax:   info.Rax,
+                    rdx:   info.Rdx,
+                    write: access_info.IsWrite() != 0,
                 }
             },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64Cpuid => {
@@ -167,19 +176,18 @@ impl VmExit {
                 let vector = ExceptionVector::from_id(info.ExceptionType)
                     .expect("Unknown exception type.");
 
-                let exception_info = unsafe { info.ExceptionInfo.AsUINT32 };
+                let exception_info = unsafe { info.ExceptionInfo.__bindgen_anon_1 };
 
-                let error_code = match exception_info & 1 {
+                let error_code = match exception_info.ErrorCodeValid() {
                     0 => None,
-                    1 => Some(info.ErrorCode),
-                    _ => unreachable!(),
+                    _ => Some(info.ErrorCode),
                 };
 
                 VmExit::Exception {
                     instruction,
                     vector,
                     error_code,
-                    software: (exception_info >> 1) & 1 != 0,
+                    software: exception_info.SoftwareException() != 0,
                     param:    info.ExceptionParameter,
                 }
             },
@@ -205,37 +213,35 @@ impl VmExit {
                 }
             },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonCanceled => {
-                let info = unsafe { &exit_context.__bindgen_anon_1.CancelReason };
+                let info   = unsafe { &exit_context.__bindgen_anon_1.CancelReason };
                 let reason = info.CancelReason;
 
                 assert!(reason == 0, "Unknown execution cancel reason {}.", reason);
 
                 VmExit::Preemption
             },
-            whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonUnrecoverableException => {
-                VmExit::UnrecoverableException
-            },
-            whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64Halt => {
-                VmExit::Halt
-            },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonUnsupportedFeature => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.UnsupportedFeature };
 
-                let feature_code = info.FeatureCode;
-                let param = info.FeatureParameter;
-
-                match info.FeatureCode {
-                    1 => panic!("Unsupported intercept with parameter {}.", param),
-                    2 => panic!("Unsupported task switch with TSS with parameter {}.", param),
-                    _ => panic!("Unknown unsupported feature {} with parameter {}.",
-                        feature_code, param),
+                let feature = match info.FeatureCode {
+                    1 => UnsupportedFeature::Intercept,
+                    2 => UnsupportedFeature::TaskSwitchTss,
+                    _ => panic!("Unknown unsupported feature {}.", info.FeatureParameter),
                 };
+
+                VmExit::UnsupportedFeature {
+                    feature,
+                    param: info.FeatureParameter,
+                }
             },
-            whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonNone => {
-                panic!("Processor exited without any reason.");
+            whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonUnrecoverableException => {
+                VmExit::UnrecoverableException
             },
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonInvalidVpRegisterValue => {
-                panic!("Processor has invalid register state.");
+                VmExit::InvalidState
+            },
+            whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64Halt => {
+                VmExit::Halt
             },
             _ => panic!("Unknown exit reason {}.", exit_context.ExitReason)
         }

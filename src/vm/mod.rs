@@ -14,7 +14,7 @@ use std::thread::{self, JoinHandle};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-pub use misc::{AccessType, PortSize, PendingInterruptType, SegAttribs};
+pub use misc::{AccessType, PortSize, PendingInterruptType, SegAttribs, UnsupportedFeature};
 pub use regs::{TableReg, SegReg, PendingExceptionReg, IntStateReg};
 pub use regstate::RegState;
 pub use exception::ExceptionVector;

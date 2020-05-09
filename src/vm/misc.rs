@@ -20,6 +20,12 @@ pub enum PendingInterruptType {
 }
 
 #[derive(Debug, Copy, Clone)]
+pub enum UnsupportedFeature {
+    Intercept,
+    TaskSwitchTss,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct SegAttribs {
     pub seg_type:    u8,
     pub non_system:  bool,

@@ -10,7 +10,7 @@ trait RegSyncWhvValue {
 
 impl RegSyncWhvValue for SegReg {
     fn create_from_whv(value: &whv::WHV_REGISTER_VALUE) -> Self {
-        let value = unsafe { &value.Segment };
+        let value   = unsafe { &value.Segment };
         let attribs = unsafe { value.__bindgen_anon_1.Attributes };
 
         Self {
