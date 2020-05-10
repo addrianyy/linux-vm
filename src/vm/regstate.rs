@@ -33,11 +33,12 @@ pub struct RegState {
     pub idtr: TableReg,
     pub gdtr: TableReg,
 
-    pub cr0: Reg64,
-    pub cr2: Reg64,
-    pub cr3: Reg64,
-    pub cr4: Reg64,
-    pub cr8: Reg64,
+    pub cr0:  Reg64,
+    pub cr2:  Reg64,
+    pub cr3:  Reg64,
+    pub cr4:  Reg64,
+    pub cr8:  Reg64,
+    pub xcr0: Reg64,
 
     pub dr0: Reg64,
     pub dr1: Reg64,

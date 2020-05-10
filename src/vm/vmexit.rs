@@ -3,7 +3,7 @@ use super::{AccessType, SegReg, PortSize, ExceptionVector,
 
 use super::whvp_bindings as whv;
 
-type InstructionBytes = Vec<u8>;
+type InstructionBytes = [u8; 16];
 
 #[derive(Debug, Clone)]
 pub enum VmExit {
@@ -70,8 +70,6 @@ pub enum VmExit {
 
 impl VmExit {
     pub(super) fn from_run_exit_context(exit_context: &whv::WHV_RUN_VP_EXIT_CONTEXT) -> VmExit {
-        let instruction_length = exit_context.VpContext.InstructionLength() as usize;
-
         match exit_context.ExitReason {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonNone => {
                 panic!("Processor exited without any reason.");
@@ -79,8 +77,7 @@ impl VmExit {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonMemoryAccess => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.MemoryAccess };
 
-                let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
-                let instruction = info.InstructionBytes[0..ilen].to_owned();
+                let instruction = info.InstructionBytes;
 
                 let access_info = unsafe { info.AccessInfo.__bindgen_anon_1 };
 
@@ -103,8 +100,7 @@ impl VmExit {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonX64IoPortAccess => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.IoPortAccess };
 
-                let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
-                let instruction = info.InstructionBytes[0..ilen].to_owned();
+                let instruction = info.InstructionBytes;
 
                 let access_info = unsafe { info.AccessInfo.__bindgen_anon_1 };
 
@@ -170,8 +166,7 @@ impl VmExit {
             whv::WHV_RUN_VP_EXIT_REASON_WHvRunVpExitReasonException => {
                 let info = unsafe { &exit_context.__bindgen_anon_1.VpException };
 
-                let ilen = std::cmp::min(instruction_length, info.InstructionByteCount as usize);
-                let instruction = info.InstructionBytes[0..ilen].to_owned();
+                let instruction = info.InstructionBytes;
 
                 let vector = ExceptionVector::from_id(info.ExceptionType)
                     .expect("Unknown exception type.");

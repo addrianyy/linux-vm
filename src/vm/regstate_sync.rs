@@ -171,6 +171,7 @@ macro_rules! sync_regstate {
         sync_reg!(cr3);
         sync_reg!(cr4);
         sync_reg!(cr8);
+        sync_reg!(xcr0);
 
         sync_reg!(dr0);
         sync_reg!(dr1);
@@ -234,6 +235,7 @@ pub const REGSTATE_WHV_NAMES: &[whv::WHV_REGISTER_NAME] = &[
     whv::WHV_REGISTER_NAME_WHvX64RegisterCr3,
     whv::WHV_REGISTER_NAME_WHvX64RegisterCr4,
     whv::WHV_REGISTER_NAME_WHvX64RegisterCr8,
+    whv::WHV_REGISTER_NAME_WHvX64RegisterXCr0,
 
     whv::WHV_REGISTER_NAME_WHvX64RegisterDr0,
     whv::WHV_REGISTER_NAME_WHvX64RegisterDr1,
