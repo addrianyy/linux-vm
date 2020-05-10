@@ -125,7 +125,7 @@ pub fn map_elf64(buffer: &[u8]) -> MappedElf {
     let pad = ((mapped.len() + 0xFFF) & !0xFFF) - mapped.len();
     mapped.extend(vec![0u8; pad as usize]);
 
-    let sections = sections.into_iter().map(|(k, v)| v).collect();
+    let sections = sections.into_iter().map(|(_k, v)| v).collect();
 
     MappedElf {
         mapped,
