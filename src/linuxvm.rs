@@ -467,7 +467,7 @@ impl LinuxVm {
                             let rip = self.vm.regs().rip;
 
                             coverage.1 += 1;
-                            coverage.0.write_all(format!("{:X}", rip).as_bytes())
+                            coverage.0.write_all(format!("{:X}\n", rip).as_bytes())
                                 .expect("Failed to write coverage info.");
 
                             handled = true;

@@ -25,6 +25,6 @@ fn main() {
         "something",
     ];
 
-    let mut linux_vm = LinuxVm::new("F:\\result", &cmdline_args, &env, Some("cov.txt"));
+    let mut linux_vm = LinuxVm::new("F:\\result", &cmdline_args, &env, Some("coverage.txt"));
     linux_vm.run();
 }
