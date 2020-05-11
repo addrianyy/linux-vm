@@ -3,6 +3,7 @@ mod errcodes;
 mod lxstate;
 mod lxfile;
 mod lxsyscall;
+mod lxrealfile;
 mod lxstd;
 mod usermem;
 
@@ -162,11 +163,11 @@ impl LinuxVm {
 
             let mut protection = MemProt::r(MemAccess::Usermode);
 
-            for section in &elf.sections {
-                if virt >= section.start && virt < section.start + section.size {
+            for segment in &elf.segments {
+                if virt >= segment.start && virt < segment.start + segment.size {
                     protection = MemProt {
-                        write:   section.writeable,
-                        execute: section.executable,
+                        write:   segment.writeable,
+                        execute: segment.executable,
                         user:    true,
                     };
 
@@ -324,9 +325,9 @@ impl LinuxVm {
         const STDOUT_FD: u32 = 1;
         const STDERR_FD: u32 = 2;
 
-        lx_state.create_file_at_fd(STDIN_FD,  lxstd::LinuxStdin::new(), true);
-        lx_state.create_file_at_fd(STDOUT_FD, lxstd::LinuxStdout::new(false), true);
-        lx_state.create_file_at_fd(STDERR_FD, lxstd::LinuxStdout::new(true), true);
+        lx_state.create_file_at_fd(STDIN_FD,  lxstd::LinuxStdin::new());
+        lx_state.create_file_at_fd(STDOUT_FD, lxstd::LinuxStdout::new(false));
+        lx_state.create_file_at_fd(STDERR_FD, lxstd::LinuxStdout::new(true));
 
         Self {
             vm,

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use crate::mm::membank::MemBank;
 use super::lxfile::{LinuxFile, DynLinuxFile};
 
@@ -9,8 +9,8 @@ pub struct LinuxState {
     pid:      u32,
     exited:   bool,
     fds:      BTreeMap<Fd, Box<DynLinuxFile>>,
-    reserved: BTreeSet<Fd>,
     pub heap: MemBank,
+    next_fd:  Fd,
 }
 
 impl LinuxState {
@@ -20,17 +20,27 @@ impl LinuxState {
             tid,
             exited:   false,
             fds:      BTreeMap::new(),
-            reserved: BTreeSet::new(),
             heap:     MemBank::new(heap_start, Some(heap_end)),
+            next_fd:  0x100,
         }
     }
 
-    pub fn create_file_at_fd(&mut self, fd: Fd, file: impl LinuxFile + 'static, reserve: bool) {
+    pub fn create_file_at_fd(&mut self, fd: Fd, file: impl LinuxFile + 'static) {
         assert!(self.fds.insert(fd, Box::new(file)).is_none(), "FD {} was already used.", fd);
+    }
 
-        if reserve {
-            assert!(self.reserved.insert(fd), "FD {} was already reserved.", fd);
-        }
+    pub fn create_file(&mut self, file: impl LinuxFile + 'static) -> Fd {
+        let fd = self.next_fd;
+
+        self.next_fd += 1;
+
+        self.create_file_at_fd(fd, file);
+
+        fd
+    }
+
+    pub fn close_file(&mut self, fd: Fd) -> bool {
+        self.fds.remove(&fd).is_some()
     }
 
     pub fn exit(&mut self) {

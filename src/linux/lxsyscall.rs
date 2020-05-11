@@ -4,12 +4,14 @@ use crate::mm::paging::MemProt;
 use super::usermem::{USER_R, USER_RW};
 use super::lxstate::LinuxState;
 use super::lxfile::DynLinuxFile;
+use super::lxrealfile::LinuxRealFile;
 use crate::bytevec::ByteVec;
 use super::VmPaging;
 use super::errcodes as ec;
 
 use std::time::{SystemTime, Duration};
 use std::convert::TryInto;
+use std::fs::OpenOptions;
 
 pub struct LinuxSyscall<'a> {
     vm:             &'a mut Vm,
@@ -56,8 +58,10 @@ impl<'a> LinuxSyscall<'a> {
             0   => self.sys_read(params[0] as u32, params[1], params[2]),
             1   => self.sys_write(params[0] as u32, params[1], params[2]),
             2   => self.sys_open(params[0], params[1] as u32, params[2] as u32),
+            3   => self.sys_close(params[0] as u32),
             9   => self.sys_mmap(params[0], params[1], params[2] as u32, params[3] as u32, 
                                  params[4] as u32, params[5] as u32),
+            11  => self.sys_munmap(params[0], params[1]),
             12  => self.sys_brk(params[0]),
             16  => self.sys_ioctl(params[0] as u32, params[1] as u32, params[2]),
             19  => self.sys_readv(params[0] as u32, params[1], params[2] as u32),
@@ -95,6 +99,8 @@ impl<'a> LinuxSyscall<'a> {
         const MAP_PRIVATE:   u32 = 0x02;
         const MAP_ANONYMOUS: u32 = 0x20;
 
+        // TODO
+
         assert!(flags & MAP_SHARED    == 0, "Shared mmap is not supported.");
         assert!(flags & MAP_PRIVATE   != 0, "Non-private mmap is not supported.");
         assert!(flags & MAP_ANONYMOUS != 0, "Non-anonymous mmap is not supported.");
@@ -110,6 +116,13 @@ impl<'a> LinuxSyscall<'a> {
             write:   prot & PROT_WRITE != 0,
             execute: prot & PROT_EXEC  != 0,
         }) as i64
+    }
+
+    fn sys_munmap(&mut self, addr: u64, _size: u64) -> i64 {
+        // TODO
+        println!("munmap {:X}", addr);
+
+        0
     }
 
     fn sys_nanosleep(&mut self, rqtp: u64, _rmtp: u64) -> i64 {
@@ -184,12 +197,50 @@ impl<'a> LinuxSyscall<'a> {
         String::from_utf8_lossy(&bytes).to_string()
     }
 
-    fn sys_open(&mut self, path: u64, _flags: u32, _mode: u32) -> i64 {
+    fn sys_open(&mut self, path: u64, flags: u32, _mode: u32) -> i64 {
+        const O_ACCMODE: u32 = 00000003;
+        const O_RDONLY:  u32 = 00000000;
+        const O_WRONLY:  u32 = 00000001;
+        const O_RDWR:    u32 = 00000002;
+        const O_CREAT:     u32 = 01000;
+        const O_TRUNC:     u32 = 02000;
+        const O_EXCL:      u32 = 04000;
+        const O_NOCTTY:    u32 = 010000;
+        const O_NONBLOCK:  u32 = 00004;
+        const O_APPEND:    u32 = 00010;
+        const O_DSYNC:     u32 = 040000;
+        const O_DIRECTORY: u32 = 0100000;
+        const O_NOFOLLOW:  u32 = 0200000;
+        const O_LARGEFILE: u32 = 0400000;
+        const O_DIRECT:    u32 = 02000000;
+        const O_NOATIME:   u32 = 04000000;
+        const O_CLOEXEC:   u32 = 010000000;
+
         let path = self.read_string(path);
 
-        println!("Tried to open file \"{}\".", path);
-        
-        -1
+        let file = OpenOptions::new()
+            .read((flags & O_RDONLY != 0) || (flags & O_RDWR != 0))
+            .write((flags & O_WRONLY != 0) || (flags & O_RDWR != 0))
+            .append(flags & O_APPEND != 0)
+            .truncate(flags & O_TRUNC != 0)
+            .create(flags & O_CREAT != 0)
+            .open(path);
+
+        match file {
+            Ok(file) => {
+                self.state.create_file(LinuxRealFile::new(file)) as i64
+            },
+            Err(error) => {
+                panic!("Unhandled open error {:?}.", error)
+            },
+        }
+    }
+
+    fn sys_close(&mut self, fd: u32) -> i64 {
+        match self.state.close_file(fd) {
+            true  => 0,
+            false => -ec::EBADF,
+        }
     }
 
     fn sys_brk(&mut self, _brk: u64) -> i64 {
@@ -262,6 +313,8 @@ impl<'a> LinuxSyscall<'a> {
     }
 
     fn sys_ioctl(&mut self, fd: u32, cmd: u32, arg: u64) -> i64 {
+        println!("{:X}", self.vm.regs().rip);
+
         match self.state.file_from_fd(fd) {
             Some(file) => file.ioctl(cmd, arg, &mut self.vm, &mut self.paging),
             _          => -ec::EBADF,

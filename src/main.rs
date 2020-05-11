@@ -22,7 +22,7 @@ fn main() {
     ];
 
     let mut linux_vm = LinuxVm::new("F:\\linuxapp\\compiled", &cmdline_args, &env,
-        Some("coverage.txt"));
+        None);
 
     linux_vm.run();
 }
