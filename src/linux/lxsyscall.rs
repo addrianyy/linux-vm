@@ -1,10 +1,15 @@
 use crate::vm::*;
-use crate::mm::phys_allocator::ContinousPhysAllocator;
+use crate::mm::phys_allocator::{PhysAllocator, ContinousPhysAllocator};
+use crate::mm::paging::MemProt;
 use super::usermem::{USER_R, USER_RW};
 use super::lxstate::LinuxState;
 use super::lxfile::DynLinuxFile;
+use crate::bytevec::ByteVec;
 use super::VmPaging;
 use super::errcodes as ec;
+
+use std::time::{SystemTime, Duration};
+use std::convert::TryInto;
 
 pub struct LinuxSyscall<'a> {
     vm:             &'a mut Vm,
@@ -50,18 +55,148 @@ impl<'a> LinuxSyscall<'a> {
         match syscall_id {
             0   => self.sys_read(params[0] as u32, params[1], params[2]),
             1   => self.sys_write(params[0] as u32, params[1], params[2]),
+            2   => self.sys_open(params[0], params[1] as u32, params[2] as u32),
+            9   => self.sys_mmap(params[0], params[1], params[2] as u32, params[3] as u32, 
+                                 params[4] as u32, params[5] as u32),
+            12  => self.sys_brk(params[0]),
             16  => self.sys_ioctl(params[0] as u32, params[1] as u32, params[2]),
             19  => self.sys_readv(params[0] as u32, params[1], params[2] as u32),
             20  => self.sys_writev(params[0] as u32, params[1], params[2] as u32),
+            35  => self.sys_nanosleep(params[0], params[1]),
             60  => self.sys_exit(params[0] as u32),
             158 => self.sys_arch_prctl(params[0] as u32, params[1]),
             218 => self.sys_set_tid_address(params[0]),
+            228 => self.sys_clock_gettime(params[0] as u32, params[1]),
             231 => self.sys_exit_group(params[0] as u32),
             _   => panic!("Unknown syscall {} at RIP {:X}.", syscall_id, self.vm.regs().rip),
         }
     }
 
-    fn is_valid_addr(&self, addr: u64) -> bool {
+    fn allocate(&mut self, length: u64, prot: MemProt) -> u64 {
+        assert!(length & 0xFFF == 0, "Size {:X} not page aligned.", length);
+
+        let phys_addr = self.phys_allocator.alloc_phys(&mut self.vm, length, None);
+        let virt_addr = self.state.heap.reserve_region(length);
+
+        self.paging.map_virt_region(&mut self.vm, virt_addr, phys_addr, length, prot);
+
+        virt_addr
+    }
+
+    fn sys_mmap(&mut self, addr: u64, length: u64, prot: u32, flags: u32, _fd: u32, _off: u32) 
+        -> i64
+    {
+        const PROT_READ:  u32 = 1;
+        const PROT_WRITE: u32 = 2;
+        const PROT_EXEC:  u32 = 4;
+
+        const MAP_FILE:      u32 = 0x00;
+        const MAP_SHARED:    u32 = 0x01;
+        const MAP_PRIVATE:   u32 = 0x02;
+        const MAP_ANONYMOUS: u32 = 0x20;
+
+        assert!(flags & MAP_SHARED    == 0, "Shared mmap is not supported.");
+        assert!(flags & MAP_PRIVATE   != 0, "Non-private mmap is not supported.");
+        assert!(flags & MAP_ANONYMOUS != 0, "Non-anonymous mmap is not supported.");
+
+        if addr != 0 {
+            println!("WARNING: Ignoring mmap base address {:X}.", addr);
+        }
+
+        let length = (length + 0xFFF) & !0xFFF;
+
+        self.allocate(length, MemProt {
+            user:    true,
+            write:   prot & PROT_WRITE != 0,
+            execute: prot & PROT_EXEC  != 0,
+        }) as i64
+    }
+
+    fn sys_nanosleep(&mut self, rqtp: u64, _rmtp: u64) -> i64 {
+        let mut timespec = [0u8; 16];
+
+        if self.paging.read_virt_checked(&mut self.vm, rqtp, &mut timespec, USER_RW).is_err() {
+            return -ec::EFAULT;
+        }
+
+        let seconds = u64::from_le_bytes(timespec[0..8].try_into().unwrap());
+        let nanos   = u64::from_le_bytes(timespec[8..16].try_into().unwrap());
+
+        let duration = Duration::from_secs(seconds) + Duration::from_nanos(nanos);
+
+        std::thread::sleep(duration);
+
+        0
+    }
+
+    fn sys_clock_gettime(&mut self, clock_id: u32, tp: u64) -> i64 {
+        let unix_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
+
+        let seconds = unix_time.as_secs();
+        let nanos   = (unix_time.as_nanos() - Duration::from_secs(seconds).as_nanos()) as u64;
+
+        let mut timespec = ByteVec::with_capacity(16);
+
+        timespec.push_u64(seconds);
+        timespec.push_u64(nanos);
+
+        if self.paging.write_virt_checked(&mut self.vm, tp, &timespec, USER_RW).is_err() {
+            return -ec::EFAULT;
+        }
+
+        0
+    }
+
+    fn read_string(&mut self, mut addr: u64) -> String {
+        let mut bytes = Vec::with_capacity(512);
+
+        while bytes.len() < 512 {
+            let mut buf = [0u8; 16];
+            let result  = self.paging.read_virt_checked(&mut self.vm, addr, &mut buf, USER_R);
+
+            let read_bytes = match result {
+                Ok(_)     => buf.len(),
+                Err(read) => read as usize,
+            };
+
+            if read_bytes == 0 {
+                break;
+            }
+
+            let null_terminator = buf.iter().position(|x| *x == 0);
+            if let Some(pos) = null_terminator {
+                if pos != 0 {
+                    bytes.extend_from_slice(&buf[0..pos]);
+                }
+
+                break;
+            } else {
+                bytes.extend_from_slice(&buf[0..read_bytes]);
+            }
+
+            if read_bytes < buf.len() {
+                break;
+            }
+
+            addr += read_bytes as u64;
+        }
+
+        String::from_utf8_lossy(&bytes).to_string()
+    }
+
+    fn sys_open(&mut self, path: u64, flags: u32, mode: u32) -> i64 {
+        let path = self.read_string(path);
+
+        println!("Tried to open file \"{}\".", path);
+        
+        -1
+    }
+
+    fn sys_brk(&mut self, _brk: u64) -> i64 {
+        -ec::ENOMEM
+    }
+
+    fn is_um_addr(&self, addr: u64) -> bool {
         if let Some((_, prot)) = self.paging.query_virt_addr(&self.vm, addr) {
             return prot.user;
         }
@@ -72,14 +207,14 @@ impl<'a> LinuxSyscall<'a> {
     fn sys_arch_prctl(&mut self, code: u32, addr: u64) -> i64 {
         match code {
             0x1001 => { // ARCH_SET_GS
-                if !self.is_valid_addr(addr) {
+                if !self.is_um_addr(addr) {
                     return -ec::EPERM;
                 }
 
                 self.vm.regs_mut().gs.base = addr;
             },
             0x1002 => { // ARCH_SET_FS
-                if !self.is_valid_addr(addr) {
+                if !self.is_um_addr(addr) {
                     return -ec::EPERM;
                 }
 

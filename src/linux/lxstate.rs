@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use crate::mm::membank::MemBank;
 use super::lxfile::{LinuxFile, DynLinuxFile};
 
 pub type Fd = u32;
@@ -9,16 +10,18 @@ pub struct LinuxState {
     exited:   bool,
     fds:      BTreeMap<Fd, Box<DynLinuxFile>>,
     reserved: BTreeSet<Fd>,
+    pub heap: MemBank,
 }
 
 impl LinuxState {
-    pub fn new(pid: u32, tid: u32) -> Self {
+    pub fn new(pid: u32, tid: u32, heap_start: u64, heap_end: u64) -> Self {
         Self {
             pid,
             tid,
             exited:   false,
             fds:      BTreeMap::new(),
             reserved: BTreeSet::new(),
+            heap:     MemBank::new(heap_start, Some(heap_end)),
         }
     }
 

@@ -188,7 +188,7 @@ impl LinuxVm {
         vm:              &mut Vm,
         paging:          &mut VmPaging,
         phys_allocator:  &mut ContinousPhysAllocator,
-    ) -> (u64, u64) {
+    ) -> (u64, u64, u64, u64) {
         let mut data = ByteVec::new();
 
         let mut args_offsets = Vec::with_capacity(args.len());
@@ -255,7 +255,7 @@ impl LinuxVm {
 
         vm.regs_mut().rsp = rsp;
 
-        (stack_virt, real_stack_size)
+        (stack_virt, real_stack_size, data_virt, data_aligned_size)
     }
 
     pub fn new<S1: AsRef<str>, S2: AsRef<str>>(
@@ -280,8 +280,8 @@ impl LinuxVm {
         let (elf_base, elf_size) = Self::load_executable(executable_path, &mut vm, 
             &mut paging, &mut phys_allocator);
 
-        let (stack_base, stack_size) = Self::initialize_stack(args, env, &mut vm,
-            &mut paging, &mut phys_allocator);
+        let (stack_base, stack_size, args_base, _args_size) = Self::initialize_stack(args, env,
+            &mut vm, &mut paging, &mut phys_allocator);
 
         let coverage = coverage_path.map(|path| {
             let coverage_file = File::create(path).expect("Failed to open coverage file.");
@@ -297,7 +297,28 @@ impl LinuxVm {
             println!("Enabled coverage. Trap flag set.\n");
         }
 
-        let mut lx_state = LinuxState::new(PROCESS_ID, THREAD_ID);
+        let (heap_base, heap_size) = {
+            let elf_end = elf_base + elf_size;
+
+            assert!(elf_base > 0, "ELF on null page.");
+            assert!(elf_end < stack_base, "ELF on higher address than stack.");
+            assert!(elf_end < args_base, "ELF on higher address than args.");
+
+            let gb = 1024 * 1024 * 1024;
+
+            let gap_start = elf_end;
+            let gap_end   = std::cmp::min(stack_base, args_base);
+
+            let padding    = 10 * gb;
+            let heap_start = gap_start + padding;
+            let heap_size  = gap_end - gap_start - padding * 2;
+
+            assert!(heap_size >= 10 * gb, "Heap size is less than 10GB.");
+
+            (heap_start, heap_size)
+        };
+
+        let mut lx_state = LinuxState::new(PROCESS_ID, THREAD_ID, heap_base, heap_size);
 
         const STDIN_FD:  u32 = 0;
         const STDOUT_FD: u32 = 1;
