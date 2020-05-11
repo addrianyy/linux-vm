@@ -230,14 +230,13 @@ impl Vm {
             self.reload_regs = false;
         }
         
-        self.run_sender.as_mut().unwrap().send(self.partition as usize).unwrap();
+        let exit_context = if let Some(preemption_time) = self.preemption_time {
+            self.run_sender.as_mut().unwrap().send(self.partition as usize).unwrap();
 
-        let partition       = self.partition;
-        let timeout         = self.timeout_duration;
-        let preemption_time = self.preemption_time;
-        let exit_receiver   = self.exit_receiver.as_mut().unwrap();
+            let partition     = self.partition;
+            let timeout       = self.timeout_duration;
+            let exit_receiver = self.exit_receiver.as_mut().unwrap();
 
-        let exit_context = if let Some(preemption_time) = preemption_time {
             if let Ok(ctx) = exit_receiver.recv_timeout(preemption_time) {
                 ctx
             } else {
@@ -252,7 +251,17 @@ impl Vm {
                     .expect("Runner thread did not respond in time")
             }
         } else {
-            exit_receiver.recv().unwrap()
+            let mut exit_context: MaybeUninit<whv::WHV_RUN_VP_EXIT_CONTEXT> = 
+                MaybeUninit::uninit();
+
+            let result = unsafe {
+                whv::WHvRunVirtualProcessor(self.partition, 0, exit_context.as_mut_ptr() as _,
+                    std::mem::size_of::<whv::WHV_RUN_VP_EXIT_CONTEXT>() as u32)
+            };
+
+            assert!(result >= 0, "Running virtual CPU failed with result {:X}.");
+
+            unsafe { exit_context.assume_init() }
         };
 
         self.sync_from_whv();

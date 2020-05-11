@@ -129,7 +129,7 @@ impl<'a> LinuxSyscall<'a> {
         0
     }
 
-    fn sys_clock_gettime(&mut self, clock_id: u32, tp: u64) -> i64 {
+    fn sys_clock_gettime(&mut self, _clock_id: u32, tp: u64) -> i64 {
         let unix_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
 
         let seconds = unix_time.as_secs();
@@ -184,7 +184,7 @@ impl<'a> LinuxSyscall<'a> {
         String::from_utf8_lossy(&bytes).to_string()
     }
 
-    fn sys_open(&mut self, path: u64, flags: u32, mode: u32) -> i64 {
+    fn sys_open(&mut self, path: u64, _flags: u32, _mode: u32) -> i64 {
         let path = self.read_string(path);
 
         println!("Tried to open file \"{}\".", path);
