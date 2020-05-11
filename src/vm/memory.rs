@@ -61,6 +61,7 @@ impl Memory {
     }
 
     fn assert_addr_size(addr: u64, size: u64) {
+        assert!(size > 0, "Zero sized allocations are not supported.");
         assert!(addr & 0xFFF == 0, "Physical address {:X} is not page aligned.", addr);
         assert!(size & 0xFFF == 0, "Size {:X} is not page aligned.", size);
 

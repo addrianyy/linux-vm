@@ -1,9 +1,13 @@
+mod elf_loader;
+mod errcodes;
+
 use crate::vm::*;
-use crate::phys_allocator::{PhysAllocator, ContinousPhysAllocator};
-use crate::paging::{PagingManager, MemProt, MemAccess};
+use crate::mm::phys_allocator::{PhysAllocator, ContinousPhysAllocator};
+use crate::mm::paging::{PagingManager, MemProt, MemAccess};
 use crate::bytevec::ByteVec;
-use crate::elf_loader;
-use crate::errcodes as ec;
+
+use errcodes as ec;
+
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -94,6 +98,11 @@ impl LinuxVm {
         vm.regs_mut().gdtr = TableReg {
             base:  GDT_VIRT,
             limit: gdt.len() as u16 - 1
+        };
+
+        vm.regs_mut().idtr = TableReg {
+            base:  0,
+            limit: 0,
         };
 
         let code_seg = SegReg {

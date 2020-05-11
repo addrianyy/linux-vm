@@ -1,5 +1,5 @@
 use crate::vm::*;
-use crate::phys_allocator::PhysAllocator;
+use super::phys_allocator::PhysAllocator;
 
 const PAGE_MASK:       u64 = 0x000F_FFFF_FFFF_F000;
 const PAGE_PRESENT:    u64 = 1;
@@ -53,6 +53,22 @@ impl MemProt {
             write:   true,
             user:    acc == MemAccess::Usermode,
         }
+    }
+
+    fn is_subset_of(&self, other: &MemProt) -> bool {
+        if other.execute && !self.execute {
+            return false;
+        }
+
+        if other.write && !self.write {
+            return false;
+        }
+
+        if other.user && !self.user {
+            return false;
+        }
+
+        return true;
     }
 }
 
@@ -300,12 +316,18 @@ impl<A: PhysAllocator> PagingManager<A> {
         None
     }
 
-    pub fn read_virt(&self, vm: &Vm, mut virt_addr: u64, buffer: &mut [u8]) -> Result<(), u64> {
+    pub fn read_virt_checked(&self, vm: &Vm, mut virt_addr: u64, buffer: &mut [u8], prot: MemProt) 
+        -> Result<(), u64> 
+    {
         let mut already_read = 0;
         let mut left_to_read = buffer.len() as u64;
 
         while left_to_read > 0 {
-            if let Some((backing, _)) = self.query_virt_addr(vm, virt_addr) {
+            if let Some((backing, region_prot)) = self.query_virt_addr(vm, virt_addr) {
+                if !region_prot.is_subset_of(&prot) {
+                    return Err(already_read);
+                }
+
                 let offset_in_page = virt_addr & 0xFFF;
 
                 let to_page_end = 0x1000 - offset_in_page;
@@ -327,12 +349,18 @@ impl<A: PhysAllocator> PagingManager<A> {
         Ok(())
     }
 
-    pub fn write_virt(&self, vm: &mut Vm, mut virt_addr: u64, buffer: &[u8]) -> Result<(), u64> {
+    pub fn write_virt_checked(&self, vm: &mut Vm, mut virt_addr: u64, buffer: &[u8], prot: MemProt)
+        -> Result<(), u64>
+    {
         let mut already_written = 0;
         let mut left_to_write   = buffer.len() as u64;
 
         while left_to_write > 0 {
-            if let Some((backing, _)) = self.query_virt_addr(vm, virt_addr) {
+            if let Some((backing, region_prot)) = self.query_virt_addr(vm, virt_addr) {
+                if !region_prot.is_subset_of(&prot) {
+                    return Err(already_written);
+                }
+
                 let offset_in_page = virt_addr & 0xFFF;
 
                 let to_page_end    = 0x1000 - offset_in_page;
@@ -354,13 +382,35 @@ impl<A: PhysAllocator> PagingManager<A> {
         Ok(())
     }
 
-    pub fn read_virt_u64(&self, vm: &Vm, virt_addr: u64) -> Result<u64, u64> {
+    pub fn read_virt(&self, vm: &Vm, virt_addr: u64, buffer: &mut [u8]) -> Result<(), u64> {
+        self.read_virt_checked(vm, virt_addr, buffer, MemProt::r(MemAccess::Kernelmode))
+    }
+
+    pub fn write_virt(&self, vm: &mut Vm, virt_addr: u64, buffer: &[u8]) -> Result<(), u64> {
+        self.write_virt_checked(vm, virt_addr, buffer, MemProt::r(MemAccess::Kernelmode))
+    }
+
+    pub fn read_virt_u64_checked(&self, vm: &Vm, virt_addr: u64, prot: MemProt)
+        -> Result<u64, u64> 
+    {
         let mut buffer = [0u8; 8];
-        self.read_virt(vm, virt_addr, &mut buffer).map(|_| u64::from_le_bytes(buffer))
+
+        self.read_virt_checked(vm, virt_addr, &mut buffer, prot)
+            .map(|_| u64::from_le_bytes(buffer))
+    }
+
+    pub fn write_virt_u64_checked(&self, vm: &mut Vm, virt_addr: u64, value: u64, prot: MemProt)
+        -> Result<(), u64>
+    {
+        self.write_virt_checked(vm, virt_addr, &value.to_le_bytes(), prot)
+    }
+
+    pub fn read_virt_u64(&self, vm: &Vm, virt_addr: u64) -> Result<u64, u64> {
+        self.read_virt_u64_checked(vm, virt_addr, MemProt::r(MemAccess::Kernelmode))
     }
 
     pub fn write_virt_u64(&self, vm: &mut Vm, virt_addr: u64, value: u64) -> Result<(), u64> {
-        self.write_virt(vm, virt_addr, &value.to_le_bytes())
+        self.write_virt_u64_checked(vm, virt_addr, value, MemProt::r(MemAccess::Kernelmode))
     }
 
     pub fn cr3(&self) -> u64 {

@@ -1,5 +1,5 @@
 use crate::vm::*;
-use crate::membank::MemBank;
+use super::membank::MemBank;
 
 pub trait PhysAllocator {
     fn alloc_phys(&mut self, vm: &mut Vm, size: u64, contents: Option<&[u8]>) -> u64;

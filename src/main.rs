@@ -1,15 +1,11 @@
 #![allow(dead_code)]
 
 mod vm;
-mod phys_allocator;
-mod paging;
-mod membank;
-mod linuxvm;
-mod elf_loader;
-mod errcodes;
+mod mm;
+mod linux;
 mod bytevec;
 
-use linuxvm::LinuxVm;
+use linux::LinuxVm;
 
 fn main() {
     let cmdline_args = [
