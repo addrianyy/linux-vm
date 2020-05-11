@@ -4,6 +4,7 @@ mod lxstate;
 mod lxfile;
 mod lxsyscall;
 mod lxstd;
+mod usermem;
 
 use crate::vm::*;
 use crate::mm::phys_allocator::{PhysAllocator, ContinousPhysAllocator};

@@ -25,12 +25,16 @@ impl ByteVec {
         offset
     }
 
+    pub fn push_u16(&mut self, value: u16) -> u64 {
+        self.push_bytes(&value.to_le_bytes())
+    }
+
+    pub fn push_u32(&mut self, value: u32) -> u64 {
+        self.push_bytes(&value.to_le_bytes())
+    }
+
     pub fn push_u64(&mut self, value: u64) -> u64 {
-        let offset = self.vec.len() as u64;
-
-        self.vec.extend_from_slice(&value.to_le_bytes());
-
-        offset
+        self.push_bytes(&value.to_le_bytes())
     }
 
     pub fn as_slice(&self) -> &[u8] {

@@ -1,13 +1,10 @@
 use crate::vm::*;
 use crate::mm::phys_allocator::ContinousPhysAllocator;
-use crate::mm::paging::MemProt;
+use super::usermem::{USER_R, USER_RW};
 use super::lxstate::LinuxState;
 use super::lxfile::DynLinuxFile;
 use super::VmPaging;
 use super::errcodes as ec;
-
-const USER_R:  MemProt = MemProt { execute: false, write: false, user: true };
-const USER_RW: MemProt = MemProt { execute: false, write: true, user: true };
 
 pub struct LinuxSyscall<'a> {
     vm:             &'a mut Vm,
