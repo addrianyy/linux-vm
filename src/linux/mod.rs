@@ -1,20 +1,20 @@
 mod elf_loader;
 mod errcodes;
+mod lxstate;
+mod lxfile;
+mod lxsyscall;
+mod lxstd;
 
 use crate::vm::*;
 use crate::mm::phys_allocator::{PhysAllocator, ContinousPhysAllocator};
 use crate::mm::paging::{PagingManager, MemProt, MemAccess};
 use crate::bytevec::ByteVec;
 
-use errcodes as ec;
+use lxstate::LinuxState;
+use lxsyscall::LinuxSyscall;
 
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
-
-const STDIN_FD:  u32 = 0;
-const STDOUT_FD: u32 = 1;
-const STDERR_FD: u32 = 2;
 
 const EXCEPTIONS_TO_INTERCEPT: &[ExceptionVector] = &[
     ExceptionVector::DivideErrorFault,
@@ -36,6 +36,9 @@ const EXCEPTIONS_TO_INTERCEPT: &[ExceptionVector] = &[
     ExceptionVector::SimdFloatingPointFault,
 ];
 
+const PROCESS_ID: u32 = 4;
+const THREAD_ID:  u32 = 4;
+
 const TARGET_CPL:     u8  = 3;
 const GDT_VIRT:       u64 = 0xFFFF_8000_0000_0000;
 const STACK_END_VIRT: u64 = 0x7FFF_FFFF_F000;
@@ -51,8 +54,8 @@ pub struct LinuxVm {
     elf_size:       u64,
     stack_base:     u64,
     stack_size:     u64,
-    exited:         bool,
     coverage:       Option<(File, usize)>,
+    state:          LinuxState,
 }
 
 impl LinuxVm {
@@ -97,7 +100,7 @@ impl LinuxVm {
 
         vm.regs_mut().gdtr = TableReg {
             base:  GDT_VIRT,
-            limit: gdt.len() as u16 - 1
+            limit: gdt.len() as u16 - 1,
         };
 
         vm.regs_mut().idtr = TableReg {
@@ -136,8 +139,8 @@ impl LinuxVm {
         regs.cr3 = paging.cr3();
     }
 
-    fn load_executable<P: AsRef<Path>>(
-        executable_path: P,
+    fn load_executable(
+        executable_path: &str,
         vm:              &mut Vm,
         paging:          &mut VmPaging,
         phys_allocator:  &mut ContinousPhysAllocator,
@@ -254,11 +257,11 @@ impl LinuxVm {
         (stack_virt, real_stack_size)
     }
 
-    pub fn new<S1: AsRef<str>, S2: AsRef<str>, P1: AsRef<Path>, P2: AsRef<Path>>(
-        executable_path: P1,
+    pub fn new<S1: AsRef<str>, S2: AsRef<str>>(
+        executable_path: &str,
         args:            &[S1],
         env:             &[S2],
-        coverage_path:   Option<P2>,
+        coverage_path:   Option<&str>,
     ) -> Self {
         assert!(args.len() > 0, "Need to provide at least one cmd line argument.");
         assert!(env.len()  > 0, "Need to provide at least one env variable.");
@@ -293,6 +296,16 @@ impl LinuxVm {
             println!("Enabled coverage. Trap flag set.\n");
         }
 
+        let mut lx_state = LinuxState::new(PROCESS_ID, THREAD_ID);
+
+        const STDIN_FD:  u32 = 0;
+        const STDOUT_FD: u32 = 1;
+        const STDERR_FD: u32 = 2;
+
+        lx_state.create_file_at_fd(STDIN_FD,  lxstd::LinuxStdin::new(), true);
+        lx_state.create_file_at_fd(STDOUT_FD, lxstd::LinuxStdout::new(false), true);
+        lx_state.create_file_at_fd(STDERR_FD, lxstd::LinuxStdout::new(true), true);
+
         Self {
             vm,
             paging,
@@ -301,186 +314,57 @@ impl LinuxVm {
             elf_size,
             stack_base,
             stack_size,
-            exited: false,
             coverage,
+            state: lx_state,
         }
     }
 
-    fn get_iovecs(&mut self, iov: u64, vlen: u32) -> Option<Vec<(u64, u64)>> {
-        let mut iovecs = Vec::with_capacity(vlen as usize);
+    fn report_coverage(&mut self, rip: u64) -> bool {
+        if let Some(coverage) = self.coverage.as_mut() {
+            coverage.1 += 1;
+            coverage.0.write_all(format!("{:X}\n", rip).as_bytes())
+                .expect("Failed to write coverage info.");
 
-        for i in 0..vlen {
-            let iovec = iov + i as u64 * 16;
-
-            let res = (self.paging.read_virt_u64(&mut self.vm, iovec),
-                       self.paging.read_virt_u64(&mut self.vm, iovec + 8));
-
-            if let (Ok(base), Ok(size)) = res {
-                iovecs.push((base, size));
-            } else {
-                return None;
-            }
+            return true;
         }
 
-        Some(iovecs)
-    }
-
-    fn sys_arch_prctl(&mut self, params: &[u64]) -> i64 {
-        let code = params[0];
-        let addr = params[2];
-
-        match code {
-            0x1001 => self.vm.regs_mut().gs.base = addr,
-            0x1002 => self.vm.regs_mut().fs.base = addr,
-            _      => panic!(),
-        };
-
-        0
-    }
-
-    fn sys_set_tid_address(&mut self, _params: &[u64]) -> i64 {
-        // TODO
-        4
-    }
-
-    fn sys_ioctl(&mut self, params: &[u64]) -> i64 {
-        let fd  = params[0] as u32;
-        let cmd = params[1] as u32;
-        let arg = params[2];
-
-        match fd {
-            STDOUT_FD => {
-                match cmd {
-                    0x00005413 => { // TIOCGWINSZ
-                        let result = self.paging.write_virt_u64(&mut self.vm, 
-                            arg, 0x0020_0030_0080_0080);
-
-                        if result.is_err() {
-                            return -ec::EFAULT;
-                        }
-                    },
-                    _ => {
-                        panic!("Unsupported cmd {:X} to stdout.", cmd);
-                    },
-                }
-            },
-            _ => panic!("IOCTL to unsupported fd {:X}.", fd),
-        }
-
-        0
-    }
-
-    fn sys_write(&mut self, params: &[u64]) -> i64 {
-        let fd    = params[0] as u32;
-        let buf   = params[1];
-        let count = params[2];
-
-        match fd {
-            STDOUT_FD | STDERR_FD => {
-                let mut buffer = vec![0; count as usize];
-
-                if self.paging.read_virt(&mut self.vm, buf, &mut buffer).is_ok() {
-                    print!("{}", String::from_utf8_lossy(&buffer));
-                    return count as i64;
-                } else {
-                    return -ec::EFAULT;
-                }
-            },
-            STDIN_FD => panic!("stdin writes not supported."),
-            _        => panic!("Unknown fd {:X}.", fd),
-        }
-    }
-
-    fn sys_writev(&mut self, params: &[u64]) -> i64 {
-        let fd     = params[0] as u32;
-        let iovec  = params[1];
-        let iovcnt = params[2] as u32;
-
-        let mut total = 0;
-
-        if let Some(iovecs) = self.get_iovecs(iovec, iovcnt) {
-            for iovec in iovecs {
-                let result = self.sys_write(&[fd as u64, iovec.0, iovec.1]);
-
-                if result < 0 {
-                    return result;
-                }
-
-                total += result;
-            }
-        } else {
-            return -ec::EFAULT;
-        }
-
-        total
-    }
-
-    fn sys_exit_group(&mut self, params: &[u64]) -> i64 {
-        let status = params[0];
-
-        println!("\nExecutable exited with status {:X}.", status);
-
-        self.exited = true;
-
-        0
-    }
-
-    fn handle_syscall(&mut self) {
-        let (syscall_id, params) = {
-            let regs       = self.vm.regs();
-            let syscall_id = regs.rax & 0xFFFF_FFFF;
-            
-            let params = [
-                regs.rdi,
-                regs.rsi,
-                regs.rdx,
-                regs.r10,
-                regs.r8,
-                regs.r9,
-            ];
-
-            (syscall_id, params)
-        };
-
-        let result = match syscall_id {
-            158 => self.sys_arch_prctl(&params),
-            218 => self.sys_set_tid_address(&params),
-            231 => self.sys_exit_group(&params),
-            16  => self.sys_ioctl(&params),
-            20  => self.sys_writev(&params),
-            _   => panic!("Unknown syscall {} at RIP {:X}.", syscall_id, self.vm.regs().rip),
-        };
-
-        self.vm.regs_mut().rax = result as u64;
-        self.vm.regs_mut().rip += 2;
+        false
     }
 
     pub fn run(&mut self) {
-        while !self.exited {
+        while !self.state.exited() {
             let vmexit = self.vm.run();
 
             let mut handled = false;
 
             match vmexit {
                 VmExit::Exception { vector, instruction, .. } => {
-                    if vector == ExceptionVector::InvalidOpcodeFault && 
-                        matches!(&instruction, &[0x0F, 0x05, ..]) 
+                    if vector == ExceptionVector::InvalidOpcodeFault &&
+                        matches!(&instruction, &[0x0F, 0x05, ..])
                     {
-                        self.handle_syscall();
+                        let result = LinuxSyscall::handle(
+                            &mut self.vm,
+                            &mut self.paging,
+                            &mut self.phys_allocator,
+                            &mut self.state,
+                        );
+
+                        let regs = self.vm.regs_mut();
+
+                        regs.rax = result as u64;
+                        regs.rip += 2;
+
+                        let rip = regs.rip;
+
+                        if !self.state.exited() {
+                            self.report_coverage(rip);
+                        }
 
                         handled = true;
                     }
 
                     if vector == ExceptionVector::DebugTrapOrFault {
-                        if let Some(coverage) = self.coverage.as_mut() {
-                            let rip = self.vm.regs().rip;
-
-                            coverage.1 += 1;
-                            coverage.0.write_all(format!("{:X}\n", rip).as_bytes())
-                                .expect("Failed to write coverage info.");
-
-                            handled = true;
-                        }
+                        handled = self.report_coverage(self.vm.regs().rip);
                     }
                 },
                 VmExit::Preemption => handled = true,
@@ -495,8 +379,7 @@ impl LinuxVm {
         }
 
         if let Some(coverage) = self.coverage.as_ref() {
-            println!("Finished gathering coverage.");
-            println!("#DB trap hit {} times.", coverage.1);
+            println!("Finished gathering coverage. Reported {} instructions.", coverage.1);
         }
     }
 }
