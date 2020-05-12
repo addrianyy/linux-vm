@@ -1,5 +1,6 @@
 mod elf_loader;
 mod errcodes;
+mod errconv;
 mod lxstate;
 mod lxfile;
 mod lxsyscall;

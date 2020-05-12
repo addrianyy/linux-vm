@@ -15,6 +15,12 @@ pub struct LinuxState {
 
 impl LinuxState {
     pub fn new(pid: u32, tid: u32, heap_start: u64, heap_end: u64) -> Self {
+        match std::fs::create_dir("linuxfs") {
+            Ok(_) => (),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => (),
+            _  => panic!("Failed to create linuxfs."),
+        };
+
         Self {
             pid,
             tid,

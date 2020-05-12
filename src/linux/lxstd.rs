@@ -37,7 +37,7 @@ impl LinuxFile for LinuxStdout {
 
     fn ioctl(&mut self, cmd: u32, arg: u64, vm: &mut Vm, paging: &mut VmPaging) -> i64 {
         match cmd {
-            0x00005413 => { // TIOCGWINSZ
+            0x5413 => { // TIOCGWINSZ
                 let mut winsize = ByteVec::with_capacity(2 * 4);
 
                 winsize.push_u16(25); // rows

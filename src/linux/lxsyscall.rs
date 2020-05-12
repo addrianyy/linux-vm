@@ -8,6 +8,7 @@ use super::lxrealfile::LinuxRealFile;
 use crate::bytevec::ByteVec;
 use super::VmPaging;
 use super::errcodes as ec;
+use super::errconv::ekind_to_linux_error;
 
 use std::time::{SystemTime, Duration};
 use std::convert::TryInto;
@@ -59,7 +60,7 @@ impl<'a> LinuxSyscall<'a> {
             1   => self.sys_write(params[0] as u32, params[1], params[2]),
             2   => self.sys_open(params[0], params[1] as u32, params[2] as u32),
             3   => self.sys_close(params[0] as u32),
-            9   => self.sys_mmap(params[0], params[1], params[2] as u32, params[3] as u32, 
+            9   => self.sys_mmap(params[0], params[1], params[2] as u32, params[3] as u32,
                                  params[4] as u32, params[5] as u32),
             11  => self.sys_munmap(params[0], params[1]),
             12  => self.sys_brk(params[0]),
@@ -160,10 +161,10 @@ impl<'a> LinuxSyscall<'a> {
         0
     }
 
-    fn read_string(&mut self, mut addr: u64) -> String {
-        let mut bytes = Vec::with_capacity(512);
+    fn read_string(&mut self, mut addr: u64) -> Option<String> {
+        let mut bytes = Vec::with_capacity(1024);
 
-        while bytes.len() < 512 {
+        while bytes.len() < 1024 {
             let mut buf = [0u8; 16];
             let result  = self.paging.read_virt_checked(&mut self.vm, addr, &mut buf, USER_R);
 
@@ -173,7 +174,7 @@ impl<'a> LinuxSyscall<'a> {
             };
 
             if read_bytes == 0 {
-                break;
+                return None;
             }
 
             let null_terminator = buf.iter().position(|x| *x == 0);
@@ -194,45 +195,58 @@ impl<'a> LinuxSyscall<'a> {
             addr += read_bytes as u64;
         }
 
-        String::from_utf8_lossy(&bytes).to_string()
+        Some(String::from_utf8_lossy(&bytes).to_string())
     }
 
     fn sys_open(&mut self, path: u64, flags: u32, _mode: u32) -> i64 {
-        const O_ACCMODE: u32 = 00000003;
-        const O_RDONLY:  u32 = 00000000;
-        const O_WRONLY:  u32 = 00000001;
-        const O_RDWR:    u32 = 00000002;
+        const O_WRONLY:    u32 = 00000001;
+        const O_RDWR:      u32 = 00000002;
         const O_CREAT:     u32 = 01000;
         const O_TRUNC:     u32 = 02000;
         const O_EXCL:      u32 = 04000;
-        const O_NOCTTY:    u32 = 010000;
-        const O_NONBLOCK:  u32 = 00004;
         const O_APPEND:    u32 = 00010;
-        const O_DSYNC:     u32 = 040000;
         const O_DIRECTORY: u32 = 0100000;
-        const O_NOFOLLOW:  u32 = 0200000;
-        const O_LARGEFILE: u32 = 0400000;
-        const O_DIRECT:    u32 = 02000000;
-        const O_NOATIME:   u32 = 04000000;
-        const O_CLOEXEC:   u32 = 010000000;
 
-        let path = self.read_string(path);
+        let path = if let Some(path) = self.read_string(path) {
+            if path.contains("../") || path.contains("..\\") {
+                return -ec::EACCES;
+            }
+
+            let mut final_path = String::new();
+            final_path.push_str("linuxfs/");
+
+            if path.starts_with("/") {
+                final_path.push_str(&path[1..]);
+            } else {
+                final_path.push_str(&path);
+            }
+
+            final_path
+        } else {
+            return -ec::EFAULT;
+        };
+
+        assert!(flags & O_DIRECTORY != 0, "Opening of directories is not supported.");
+
+        if flags & O_RDWR != 0 && flags & O_WRONLY != 0 {
+            return -ec::EINVAL;
+        }
+
+        let read  = flags & O_RDWR != 0 || flags & O_WRONLY == 0;
+        let write = flags & O_RDWR != 0 || flags & O_WRONLY == 1;
 
         let file = OpenOptions::new()
-            .read((flags & O_RDONLY != 0) || (flags & O_RDWR != 0))
-            .write((flags & O_WRONLY != 0) || (flags & O_RDWR != 0))
+            .read(read)
+            .write(write)
             .append(flags & O_APPEND != 0)
             .truncate(flags & O_TRUNC != 0)
             .create(flags & O_CREAT != 0)
+            .create_new(flags & O_EXCL != 0)
             .open(path);
 
         match file {
-            Ok(file) => {
-                self.state.create_file(LinuxRealFile::new(file)) as i64
-            },
-            Err(error) => {
-                panic!("Unhandled open error {:?}.", error)
-            },
+            Ok(file)   => self.state.create_file(LinuxRealFile::new(file)) as i64,
+            Err(error) => ekind_to_linux_error(error.kind()),
         }
     }
 
@@ -295,8 +309,6 @@ impl<'a> LinuxSyscall<'a> {
     }
 
     fn sys_set_tid_address(&mut self, _tidptr: u64) -> i64 {
-        // TODO: Set TID ptr and handle it on thread termination.
-
         self.state.tid() as i64
     }
 
@@ -313,8 +325,6 @@ impl<'a> LinuxSyscall<'a> {
     }
 
     fn sys_ioctl(&mut self, fd: u32, cmd: u32, arg: u64) -> i64 {
-        println!("{:X}", self.vm.regs().rip);
-
         match self.state.file_from_fd(fd) {
             Some(file) => file.ioctl(cmd, arg, &mut self.vm, &mut self.paging),
             _          => -ec::EBADF,
