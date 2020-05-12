@@ -53,13 +53,9 @@ pub struct LinuxVm {
     vm:             Vm,
     paging:         VmPaging,
     phys_allocator: ContinousPhysAllocator,
-    elf_base:       u64,
-    elf_size:       u64,
-    stack_base:     u64,
-    stack_size:     u64,
     coverage:       Option<Coverage>,
+    syscall_stats:  Option<SyscallStats>,
     state:          LinuxState,
-    syscall_stats:  SyscallStats,
 }
 
 impl LinuxVm {
@@ -283,7 +279,7 @@ impl LinuxVm {
         let (elf_base, elf_size) = Self::load_executable(executable_path, &mut vm, 
             &mut paging, &mut phys_allocator);
 
-        let (stack_base, stack_size, args_base, _args_size) = Self::initialize_stack(args, env,
+        let (stack_base, _stack_size, args_base, _args_size) = Self::initialize_stack(args, env,
             &mut vm, &mut paging, &mut phys_allocator);
 
         let coverage = coverage_path.map(|path| Coverage::new(path));
@@ -331,13 +327,9 @@ impl LinuxVm {
             vm,
             paging,
             phys_allocator,
-            elf_base,
-            elf_size,
-            stack_base,
-            stack_size,
             coverage,
             state:         lx_state,
-            syscall_stats: SyscallStats::new(),
+            syscall_stats: Some(SyscallStats::new()),
         }
     }
 
@@ -371,7 +363,9 @@ impl LinuxVm {
                             &mut self.state,
                         );
 
-                        self.syscall_stats.report(syscall_id);
+                        if let Some(syscall_stats) = self.syscall_stats.as_mut() {
+                            syscall_stats.report(syscall_id);
+                        }
 
                         let regs = self.vm.regs_mut();
 
@@ -406,8 +400,10 @@ impl LinuxVm {
             println!("Gathered {} unique coverage entries.", coverage.entries());
         }
 
-        println!();
+        if let Some(syscall_stats) = self.syscall_stats.as_ref() {
+            println!();
 
-        self.syscall_stats.show();
+            syscall_stats.show();
+        }
     }
 }
