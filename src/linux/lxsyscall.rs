@@ -14,6 +14,14 @@ use std::time::{SystemTime, Duration};
 use std::convert::TryInto;
 use std::fs::OpenOptions;
 
+const O_WRONLY:    u32 = 00000001;
+const O_RDWR:      u32 = 00000002;
+const O_CREAT:     u32 = 01000;
+const O_TRUNC:     u32 = 02000;
+const O_EXCL:      u32 = 04000;
+const O_APPEND:    u32 = 00010;
+const O_DIRECTORY: u32 = 0100000;
+
 pub struct LinuxSyscall<'a> {
     vm:             &'a mut Vm,
     paging:         &'a mut VmPaging,
@@ -69,6 +77,7 @@ impl<'a> LinuxSyscall<'a> {
             20  => self.sys_writev(params[0] as u32, params[1], params[2] as u32),
             35  => self.sys_nanosleep(params[0], params[1]),
             60  => self.sys_exit(params[0] as u32),
+            85  => self.sys_creat(params[0], params[1] as u32),
             158 => self.sys_arch_prctl(params[0] as u32, params[1]),
             218 => self.sys_set_tid_address(params[0]),
             228 => self.sys_clock_gettime(params[0] as u32, params[1]),
@@ -198,15 +207,12 @@ impl<'a> LinuxSyscall<'a> {
         Some(String::from_utf8_lossy(&bytes).to_string())
     }
 
-    fn sys_open(&mut self, path: u64, flags: u32, _mode: u32) -> i64 {
-        const O_WRONLY:    u32 = 00000001;
-        const O_RDWR:      u32 = 00000002;
-        const O_CREAT:     u32 = 01000;
-        const O_TRUNC:     u32 = 02000;
-        const O_EXCL:      u32 = 04000;
-        const O_APPEND:    u32 = 00010;
-        const O_DIRECTORY: u32 = 0100000;
 
+    fn sys_creat(&mut self, path: u64, mode: u32) -> i64 {
+        self.sys_open(path, O_CREAT | O_WRONLY | O_TRUNC, mode)
+    }
+
+    fn sys_open(&mut self, path: u64, flags: u32, _mode: u32) -> i64 {
         let path = if let Some(path) = self.read_string(path) {
             if path.contains("../") || path.contains("..\\") {
                 return -ec::EACCES;
