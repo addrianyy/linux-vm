@@ -8,6 +8,7 @@ mod lxrealfile;
 mod lxstd;
 mod usermem;
 mod coverage;
+mod syscall_stats;
 
 use crate::vm::*;
 use crate::mm::phys_allocator::{PhysAllocator, ContinousPhysAllocator};
@@ -16,6 +17,7 @@ use crate::bytevec::ByteVec;
 use lxstate::LinuxState;
 use lxsyscall::LinuxSyscall;
 use coverage::Coverage;
+use syscall_stats::SyscallStats;
 
 const EXCEPTIONS_TO_INTERCEPT: &[ExceptionVector] = &[
     ExceptionVector::DivideErrorFault,
@@ -57,6 +59,7 @@ pub struct LinuxVm {
     stack_size:     u64,
     coverage:       Option<Coverage>,
     state:          LinuxState,
+    syscall_stats:  SyscallStats,
 }
 
 impl LinuxVm {
@@ -333,7 +336,8 @@ impl LinuxVm {
             stack_base,
             stack_size,
             coverage,
-            state: lx_state,
+            state:         lx_state,
+            syscall_stats: SyscallStats::new(),
         }
     }
 
@@ -358,12 +362,16 @@ impl LinuxVm {
                     if vector == ExceptionVector::InvalidOpcodeFault &&
                         matches!(&instruction, &[0x0F, 0x05, ..])
                     {
+                        let syscall_id = self.vm.regs().rax as u32;
+
                         let result = LinuxSyscall::handle(
                             &mut self.vm,
                             &mut self.paging,
                             &mut self.phys_allocator,
                             &mut self.state,
                         );
+
+                        self.syscall_stats.report(syscall_id);
 
                         let regs = self.vm.regs_mut();
 
@@ -397,5 +405,9 @@ impl LinuxVm {
         if let Some(coverage) = self.coverage.as_ref() {
             println!("Gathered {} unique coverage entries.", coverage.entries());
         }
+
+        println!();
+
+        self.syscall_stats.show();
     }
 }

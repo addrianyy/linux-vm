@@ -10,8 +10,8 @@ pub struct LinuxState {
     pid:      u32,
     exited:   bool,
     fds:      BTreeMap<Fd, Box<DynLinuxFile>>,
-    pub heap: MemBank,
     next_fd:  Fd,
+    pub heap: MemBank,
 }
 
 impl LinuxState {
@@ -28,7 +28,7 @@ impl LinuxState {
             exited:   false,
             fds:      BTreeMap::new(),
             heap:     MemBank::new(heap_start, Some(heap_end)),
-            next_fd:  0x100,
+            next_fd:  10,
         }
     }
 
