@@ -7,17 +7,15 @@ mod lxsyscall;
 mod lxrealfile;
 mod lxstd;
 mod usermem;
+mod coverage;
 
 use crate::vm::*;
 use crate::mm::phys_allocator::{PhysAllocator, ContinousPhysAllocator};
 use crate::mm::paging::{PagingManager, MemProt, MemAccess};
 use crate::bytevec::ByteVec;
-
 use lxstate::LinuxState;
 use lxsyscall::LinuxSyscall;
-
-use std::fs::File;
-use std::io::Write;
+use coverage::Coverage;
 
 const EXCEPTIONS_TO_INTERCEPT: &[ExceptionVector] = &[
     ExceptionVector::DivideErrorFault,
@@ -57,7 +55,7 @@ pub struct LinuxVm {
     elf_size:       u64,
     stack_base:     u64,
     stack_size:     u64,
-    coverage:       Option<(File, usize)>,
+    coverage:       Option<Coverage>,
     state:          LinuxState,
 }
 
@@ -285,18 +283,14 @@ impl LinuxVm {
         let (stack_base, stack_size, args_base, _args_size) = Self::initialize_stack(args, env,
             &mut vm, &mut paging, &mut phys_allocator);
 
-        let coverage = coverage_path.map(|path| {
-            let coverage_file = File::create(path).expect("Failed to open coverage file.");
-
-            (coverage_file, 0)
-        });
+        let coverage = coverage_path.map(|path| Coverage::new(path));
 
         if coverage.is_some() {
             const TRAP_FLAG: u64 = 0x100;
 
             vm.regs_mut().rflags |= TRAP_FLAG;
 
-            println!("Enabled coverage. Trap flag set.\n");
+            println!("Enabled code coverage.\n");
         }
 
         let (heap_base, heap_size) = {
@@ -345,9 +339,7 @@ impl LinuxVm {
 
     fn report_coverage(&mut self, rip: u64) -> bool {
         if let Some(coverage) = self.coverage.as_mut() {
-            coverage.1 += 1;
-            coverage.0.write_all(format!("{:X}\n", rip).as_bytes())
-                .expect("Failed to write coverage info.");
+            coverage.report(rip);
 
             return true;
         }
@@ -403,7 +395,7 @@ impl LinuxVm {
         }
 
         if let Some(coverage) = self.coverage.as_ref() {
-            println!("Finished gathering coverage. Reported {} instructions.", coverage.1);
+            println!("Gathered {} unique coverage entries.", coverage.entries());
         }
     }
 }

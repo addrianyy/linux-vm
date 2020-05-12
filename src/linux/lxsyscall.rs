@@ -75,6 +75,7 @@ impl<'a> LinuxSyscall<'a> {
             16  => self.sys_ioctl(params[0] as u32, params[1] as u32, params[2]),
             19  => self.sys_readv(params[0] as u32, params[1], params[2] as u32),
             20  => self.sys_writev(params[0] as u32, params[1], params[2] as u32),
+            28  => self.sys_madvise(params[0], params[1], params[2] as u32),
             35  => self.sys_nanosleep(params[0], params[1]),
             60  => self.sys_exit(params[0] as u32),
             85  => self.sys_creat(params[0], params[1] as u32),
@@ -132,6 +133,10 @@ impl<'a> LinuxSyscall<'a> {
         // TODO
         println!("munmap {:X}", addr);
 
+        0
+    }
+
+    fn sys_madvise(&mut self, _addr: u64, _length: u64, _advice: u32) -> i64 {
         0
     }
 
@@ -212,7 +217,7 @@ impl<'a> LinuxSyscall<'a> {
         self.sys_open(path, O_CREAT | O_WRONLY | O_TRUNC, mode)
     }
 
-    fn sys_open(&mut self, path: u64, flags: u32, _mode: u32) -> i64 {
+    fn sys_open(&mut self, path: u64, mut flags: u32, _mode: u32) -> i64 {
         let path = if let Some(path) = self.read_string(path) {
             if path.contains("../") || path.contains("..\\") {
                 return -ec::EACCES;
@@ -232,7 +237,14 @@ impl<'a> LinuxSyscall<'a> {
             return -ec::EFAULT;
         };
 
-        assert!(flags & O_DIRECTORY != 0, "Opening of directories is not supported.");
+        if flags & O_CREAT != 0 {
+            flags &= !O_DIRECTORY;
+        }
+
+        if flags & O_DIRECTORY != 0 {
+            println!("WARNING: Opening of directories ({}) is not supported.", path);
+            return -ec::ENOTDIR;
+        }
 
         if flags & O_RDWR != 0 && flags & O_WRONLY != 0 {
             return -ec::EINVAL;

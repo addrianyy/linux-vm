@@ -10,8 +10,8 @@ use linux::LinuxVm;
 fn main() {
     let cmdline_args = [
         "mememulator",
-        "hello",
-        "world",
+        "3840",
+        "2160",
         "params",
     ];
 
