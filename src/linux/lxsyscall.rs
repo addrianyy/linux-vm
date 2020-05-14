@@ -131,6 +131,7 @@ impl<'a> LinuxSyscall<'a> {
 
     fn sys_munmap(&mut self, addr: u64, _size: u64) -> i64 {
         // TODO
+
         println!("munmap {:X}", addr);
 
         0
@@ -143,7 +144,7 @@ impl<'a> LinuxSyscall<'a> {
     fn sys_nanosleep(&mut self, rqtp: u64, _rmtp: u64) -> i64 {
         let mut timespec = [0u8; 16];
 
-        if self.paging.read_virt_checked(&mut self.vm, rqtp, &mut timespec, USER_RW).is_err() {
+        if self.paging.read_virt_checked(&mut self.vm, rqtp, &mut timespec, USER_R).is_err() {
             return -ec::EFAULT;
         }
 

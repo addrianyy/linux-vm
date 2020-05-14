@@ -1,5 +1,5 @@
 use super::whvp_bindings as whv;
-use super::ExceptionVector;
+use super::Exception;
 use super::regs::{Reg64, SegReg, TableReg, PendingExceptionReg, IntStateReg};
 use super::regstate::RegState;
 
@@ -93,7 +93,7 @@ impl RegSyncWhvValue for PendingExceptionReg {
                 _ => Some(value.ErrorCode),
             };
 
-            let vector = ExceptionVector::from_id(value.Vector() as u8)
+            let vector = Exception::from_id(value.Vector() as u8)
                 .expect("Invalid exception vector.");
 
             PendingExceptionReg::Pending {

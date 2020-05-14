@@ -1,5 +1,5 @@
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ExceptionVector {
+pub enum Exception {
     DivideErrorFault,
     DebugTrapOrFault,
     BreakpointTrap,
@@ -19,49 +19,49 @@ pub enum ExceptionVector {
     SimdFloatingPointFault,
 }
 
-impl ExceptionVector {
+impl Exception {
     pub(super) fn from_id(exception: u8) -> Option<Self> {
         match exception {
-            0x00 => Some(ExceptionVector::DivideErrorFault),
-            0x01 => Some(ExceptionVector::DebugTrapOrFault),
-            0x03 => Some(ExceptionVector::BreakpointTrap),
-            0x04 => Some(ExceptionVector::OverflowTrap),
-            0x05 => Some(ExceptionVector::BoundRangeFault),
-            0x06 => Some(ExceptionVector::InvalidOpcodeFault),
-            0x07 => Some(ExceptionVector::DeviceNotAvailableFault),
-            0x08 => Some(ExceptionVector::DoubleFaultAbort),
-            0x0A => Some(ExceptionVector::InvalidTaskStateSegmentFault),
-            0x0B => Some(ExceptionVector::SegmentNotPresentFault),
-            0x0C => Some(ExceptionVector::StackFault),
-            0x0D => Some(ExceptionVector::GeneralProtectionFault),
-            0x0E => Some(ExceptionVector::PageFault),
-            0x10 => Some(ExceptionVector::FloatingPointErrorFault),
-            0x11 => Some(ExceptionVector::AlignmentCheckFault),
-            0x12 => Some(ExceptionVector::MachineCheckAbort),
-            0x13 => Some(ExceptionVector::SimdFloatingPointFault),
+            0x00 => Some(Exception::DivideErrorFault),
+            0x01 => Some(Exception::DebugTrapOrFault),
+            0x03 => Some(Exception::BreakpointTrap),
+            0x04 => Some(Exception::OverflowTrap),
+            0x05 => Some(Exception::BoundRangeFault),
+            0x06 => Some(Exception::InvalidOpcodeFault),
+            0x07 => Some(Exception::DeviceNotAvailableFault),
+            0x08 => Some(Exception::DoubleFaultAbort),
+            0x0A => Some(Exception::InvalidTaskStateSegmentFault),
+            0x0B => Some(Exception::SegmentNotPresentFault),
+            0x0C => Some(Exception::StackFault),
+            0x0D => Some(Exception::GeneralProtectionFault),
+            0x0E => Some(Exception::PageFault),
+            0x10 => Some(Exception::FloatingPointErrorFault),
+            0x11 => Some(Exception::AlignmentCheckFault),
+            0x12 => Some(Exception::MachineCheckAbort),
+            0x13 => Some(Exception::SimdFloatingPointFault),
             _    => None,
         }
     }
 
     pub(super) fn to_id(&self) -> u8 {
         match self {
-            ExceptionVector::DivideErrorFault => 0x00,
-            ExceptionVector::DebugTrapOrFault => 0x01,
-            ExceptionVector::BreakpointTrap => 0x03,
-            ExceptionVector::OverflowTrap => 0x04,
-            ExceptionVector::BoundRangeFault => 0x05,
-            ExceptionVector::InvalidOpcodeFault => 0x06,
-            ExceptionVector::DeviceNotAvailableFault => 0x07,
-            ExceptionVector::DoubleFaultAbort => 0x08,
-            ExceptionVector::InvalidTaskStateSegmentFault => 0x0A,
-            ExceptionVector::SegmentNotPresentFault => 0x0B,
-            ExceptionVector::StackFault => 0x0C,
-            ExceptionVector::GeneralProtectionFault => 0x0D,
-            ExceptionVector::PageFault => 0x0E,
-            ExceptionVector::FloatingPointErrorFault => 0x10,
-            ExceptionVector::AlignmentCheckFault => 0x11,
-            ExceptionVector::MachineCheckAbort => 0x12,
-            ExceptionVector::SimdFloatingPointFault => 0x13,
+            Exception::DivideErrorFault => 0x00,
+            Exception::DebugTrapOrFault => 0x01,
+            Exception::BreakpointTrap => 0x03,
+            Exception::OverflowTrap => 0x04,
+            Exception::BoundRangeFault => 0x05,
+            Exception::InvalidOpcodeFault => 0x06,
+            Exception::DeviceNotAvailableFault => 0x07,
+            Exception::DoubleFaultAbort => 0x08,
+            Exception::InvalidTaskStateSegmentFault => 0x0A,
+            Exception::SegmentNotPresentFault => 0x0B,
+            Exception::StackFault => 0x0C,
+            Exception::GeneralProtectionFault => 0x0D,
+            Exception::PageFault => 0x0E,
+            Exception::FloatingPointErrorFault => 0x10,
+            Exception::AlignmentCheckFault => 0x11,
+            Exception::MachineCheckAbort => 0x12,
+            Exception::SimdFloatingPointFault => 0x13,
         }
     }
 }

@@ -1,4 +1,4 @@
-use super::ExceptionVector;
+use super::Exception;
 
 pub type Reg64 = u64;
 
@@ -27,7 +27,7 @@ pub enum PendingExceptionReg {
     NotPending,
     Pending {
         error_code: Option<u32>,
-        vector:     ExceptionVector,
+        vector:     Exception,
         param:      u64,
     },
 }

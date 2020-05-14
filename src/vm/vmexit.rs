@@ -1,5 +1,4 @@
-use super::{AccessType, SegReg, PortSize, ExceptionVector, 
-            PendingInterruptType, UnsupportedFeature};
+use super::{AccessType, SegReg, PortSize, Exception, PendingInterruptType, UnsupportedFeature};
 
 use super::whvp_bindings as whv;
 
@@ -47,7 +46,7 @@ pub enum VmExit {
     },
     Exception {
         instruction: InstructionBytes,
-        vector:      ExceptionVector,
+        vector:      Exception,
         error_code:  Option<u32>,
         software:    bool,
         param:       u64,
@@ -168,7 +167,7 @@ impl VmExit {
 
                 let instruction = info.InstructionBytes;
 
-                let vector = ExceptionVector::from_id(info.ExceptionType)
+                let vector = Exception::from_id(info.ExceptionType)
                     .expect("Unknown exception type.");
 
                 let exception_info = unsafe { info.ExceptionInfo.__bindgen_anon_1 };

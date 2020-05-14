@@ -17,7 +17,7 @@ use std::time::Duration;
 pub use misc::{AccessType, PortSize, PendingInterruptType, SegAttribs, UnsupportedFeature};
 pub use regs::{TableReg, SegReg, PendingExceptionReg, IntStateReg};
 pub use regstate::RegState;
-pub use exception::ExceptionVector;
+pub use exception::Exception;
 pub use vmexit::VmExit;
 pub use memory::Memory;
 pub use regbits::{cr0, cr4, efer, xcr0};
@@ -105,7 +105,7 @@ impl Vm {
         &mut self.mem
     }
 
-    pub fn new(exit_exceptions: &[ExceptionVector]) -> Self {
+    pub fn new(exit_exceptions: &[Exception]) -> Self {
         let mut partition = std::ptr::null_mut();
 
         unsafe {
@@ -207,7 +207,7 @@ impl Vm {
         vm
     }
 
-    pub fn inject_exception(&mut self, vector: ExceptionVector, error_code: Option<u32>) {
+    pub fn inject_exception(&mut self, vector: Exception, error_code: Option<u32>) {
         self.regs_mut().pending_exception = PendingExceptionReg::Pending {
             error_code,
             vector,
