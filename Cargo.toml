@@ -1,5 +1,5 @@
 [package]
-name = "x86vm"
+name = "linux-vm"
 version = "0.1.0"
 authors = ["addrianyy <adrianvpl@gmail.com>"]
 edition = "2018"
