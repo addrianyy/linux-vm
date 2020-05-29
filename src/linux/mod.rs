@@ -151,7 +151,7 @@ impl LinuxVm {
 
         // Enable protected mode and paging (both required by long mode). Enable write protect
         // to ensure that read-only memory cannot be written.
-        regs.cr0  = cr0::PE | cr0::WP | cr0::PG;
+        regs.cr0  = cr0::PE | cr0::WP | cr0::PG | cr0::MP;
 
         // Enable Physical Address Extension (required by long mode). Also enable some
         // things to make SSE work properly.

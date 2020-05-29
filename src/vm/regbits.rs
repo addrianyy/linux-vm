@@ -1,5 +1,6 @@
 pub mod cr0 {
     pub const PE: u64 = 1;
+    pub const MP: u64 = 1 << 1;
     pub const WP: u64 = 1 << 16;
     pub const PG: u64 = 1 << 31;
 }
