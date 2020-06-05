@@ -9,9 +9,9 @@ use linux::LinuxVm;
 
 fn main() {
     let cmdline_args = [
-        "mememulator",
-        "1920",
-        "1080",
+        "test_emulator",
+        "123",
+        "test00000",
     ];
 
     let env = [
@@ -20,7 +20,7 @@ fn main() {
         "something",
     ];
 
-    let mut linux_vm = LinuxVm::new("F:\\linuxapp\\compiled", &cmdline_args, &env, None);
+    let mut linux_vm = LinuxVm::new("compiled-app", &cmdline_args, &env, None);
 
     linux_vm.run();
 }

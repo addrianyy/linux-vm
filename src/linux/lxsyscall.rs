@@ -132,7 +132,7 @@ impl<'a> LinuxSyscall<'a> {
     fn sys_munmap(&mut self, addr: u64, _size: u64) -> i64 {
         // TODO
 
-        println!("munmap {:X}", addr);
+        println!("WARNING: Ignoring munmap of address {:X}.", addr);
 
         0
     }
